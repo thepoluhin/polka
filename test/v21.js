@@ -1,0 +1,47 @@
+// последняя страница: «Книга прочитана» и впечатление о книге
+const { chromium } = require('playwright'); const fs = require('fs'), path = require('path');
+const OUT = process.argv[2], BOOKS = process.argv[3];
+const ok = (c, m) => { console.log((c ? 'OK   ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
+function scan(d) { let o = []; for (const it of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, it.name); if (it.isDirectory()) continue; else if (/\.(fb2|epub)$/i.test(it.name)) { const s = fs.statSync(p); o.push({ path: p, name: it.name, size: s.size, mtime: s.mtimeMs }); } } return o; }
+(async () => {
+  const b = await chromium.launch(); const page = await b.newPage({ viewport: { width: 1400, height: 900 }, deviceScaleFactor: 1.5 });
+  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+  await page.exposeFunction('__scan', () => scan(BOOKS));
+  await page.exposeFunction('__read', (p) => fs.readFileSync(p).toString('base64'));
+  await page.exposeFunction('__stat', (p) => { try { const s = fs.statSync(p); return { name: path.basename(p), size: s.size, mtime: s.mtimeMs }; } catch (e) { return null; } });
+  await page.addInitScript((dir) => { window.shelf = { pickFolder: async () => dir, pickFile: async () => null, scan: () => window.__scan(), stat: (p) => window.__stat(p), read: async (p) => { const b = atob(await window.__read(p)); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }, initialFile: async () => null, initialUrl: async () => null, openExternal() {}, toggleFullscreen() {}, setTheme() {}, onOpenFile() {}, onOpenUrl() {}, diaryDir: async () => ({ dir: null }), noteRead: async () => null }; }, BOOKS);
+  await page.goto('file://' + require('path').resolve(__dirname, '../dist/app/index.html'));
+  await page.evaluate(() => { localStorage.setItem('polka.helpHinted', 'true'); });
+  await page.click('#btn-folder-empty');
+  await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length > 2);
+  await page.evaluate(() => { const P = window.__polka; P.changeSetting('theme', 'sepia'); P.changeSetting('focus', 'off'); P.changeSetting('cols', 'auto'); P.changeSetting('flip', 'slide'); });
+  await page.click('.book-card[data-id^="Ветров"]');
+  await page.waitForFunction(() => window.__polka.R.book && !window.__polka.R.rendering);
+  await page.evaluate(async () => { const P = window.__polka; await P.goTo(P.R.book.chapters.length - 1, 'last'); });
+  await page.waitForTimeout(3200);
+  await page.keyboard.press('ArrowRight'); await page.waitForTimeout(700);
+  ok(await page.evaluate(() => window.__endShown()), 'после последней страницы — «Книга прочитана»');
+  await page.screenshot({ path: OUT + '/end-spread.png' });
+  await page.keyboard.press('ArrowRight'); await page.waitForTimeout(300);
+  ok(await page.evaluate(() => window.__endShown()), 'дальше листать некуда');
+  await page.click('#be-ta'); await page.keyboard.type('Тихая книга об отце.'); await page.keyboard.press('ArrowLeft');
+  ok(await page.evaluate(() => window.__endShown()), 'стрелки в поле не листают');
+  await page.click('#be-save'); await page.waitForTimeout(300);
+  ok((await page.evaluate(() => JSON.parse(localStorage.getItem('polka.bookNotes') || '{}')))[await page.evaluate(() => window.__polka.R.id)].body === 'Тихая книга об отце.', 'впечатление сохранено в «О книге»');
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(400);
+  ok(!(await page.evaluate(() => window.__endShown())), '← — назад к последней странице текста');
+  await page.keyboard.press('ArrowRight'); await page.waitForTimeout(500);
+  ok((await page.inputValue('#be-ta')) === 'Тихая книга об отце.', 'при повторном открытии — ваше впечатление');
+  await page.evaluate(() => window.__polka.changeSetting('focus', 'sheet')); await page.waitForTimeout(900);
+  ok(await page.evaluate(() => window.__endShown()), 'страница остаётся при смене режима');
+  await page.mouse.move(700, 450); await page.waitForTimeout(3000);
+  await page.screenshot({ path: OUT + '/end-sheet.png' });
+  await page.click('#be-lib'); await page.waitForTimeout(500);
+  ok(await page.isVisible('#library'), '«В библиотеку»');
+  ok(!(await page.isVisible('.book-card[data-id^="Ветров"]')), 'книга ушла с открытой полки');
+  await page.click('.sh-tab[data-shelf="done"]');
+  ok(await page.isVisible('.book-card[data-id^="Ветров"]'), 'и стоит на полке «Прочитано»');
+  ok(!errs.length, 'ошибок нет ' + errs.join(' | '));
+  await b.close();
+})();

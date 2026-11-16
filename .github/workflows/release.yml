@@ -1,0 +1,80 @@
+# Сборка установщика и выпуск релиза.
+# Запускается, когда в main меняется версия (electron/package.json) или сам этот файл, либо вручную.
+# Если релиз с этой версией уже есть — ничего не делает.
+# Текст релиза берётся из docs/releases/<версия>.md.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [electron/package.json, .github/workflows/release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Версия
+        id: v
+        run: |
+          V=$(node -p "require('./electron/package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "Релиз v$V уже есть — пропускаю."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+          test -f "docs/releases/$V.md" || { echo "::error::Нет docs/releases/$V.md"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        if: steps.v.outputs.skip != '1'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Зависимости
+        if: steps.v.outputs.skip != '1'
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nsis unzip
+          npm ci --no-audit --no-fund
+
+      - name: Electron для Windows
+        if: steps.v.outputs.skip != '1'
+        run: |
+          E=$(node -p "require('electron/package.json').version")
+          F="electron-v$E-win32-x64.zip"
+          curl -fsSLO "https://github.com/electron/electron/releases/download/v$E/$F"
+          curl -fsSL "https://github.com/electron/electron/releases/download/v$E/SHASUMS256.txt" | grep " \*$F\$" | sed 's/ \*/  /' | sha256sum -c -
+          echo "ELECTRON_ZIP=$PWD/$F" >> "$GITHUB_ENV"
+
+      - name: Сборка
+        if: steps.v.outputs.skip != '1'
+        run: |
+          node build.js
+          node build/pack-win.js "$ELECTRON_ZIP"
+          bash build/make-installer.sh
+          V=${{ steps.v.outputs.version }}
+          cd dist
+          zip -q -9 "Polka-Setup-$V.zip" "Polka-Setup-$V.exe"
+          sha256sum "Polka-Setup-$V.exe" "Polka-Setup-$V.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Релиз
+        if: steps.v.outputs.skip != '1'
+        run: |
+          V=${{ steps.v.outputs.version }}
+          gh release create "v$V" \
+            "dist/Polka-Setup-$V.exe" "dist/Polka-Setup-$V.zip" dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "Полка $V" --notes-file "docs/releases/$V.md" --latest

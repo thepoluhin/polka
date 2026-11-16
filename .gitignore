@@ -1,0 +1,22 @@
+# зависимости и сборка
+node_modules/
+dist/
+*.exe
+*.zip
+!testbooks/**/*.fb2.zip
+
+# журналы и временные файлы
+*.log
+*.tmp
+*.polka-tmp
+npm-debug.log*
+
+# снимки и данные, которые оставляют автотесты в тестовой библиотеке
+testbooks/Читательский дневник/
+testbooks/Цитаты/
+testbooks/**/.polka/
+
+# системные файлы
+.DS_Store
+Thumbs.db
+desktop.ini

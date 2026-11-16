@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Полка</title>
+<!--STYLES-->
+</head>
+<body>
+
+<!-- ============ БИБЛИОТЕКА ============ -->
+<section id="library" class="view">
+  <header class="lib-header">
+    <div class="lib-brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="6" width="5" height="20" rx="1.5"/><rect x="12" y="4" width="5" height="22" rx="1.5"/><rect x="19.5" y="7" width="5" height="19" rx="1.5" transform="rotate(-12 22 16.5)"/><rect x="3" y="27" width="26" height="2" rx="1"/></svg>
+      <span>Полка</span>
+    </div>
+    <div class="segmented lib-tabs" id="lib-tabs">
+      <button data-view="books" class="active">Книги</button>
+      <button data-view="notebook">Заметки</button>
+      <button data-view="pads">Блокноты</button>
+    </div>
+    <div class="lib-search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="search" type="search" placeholder="Название или автор" autocomplete="off">
+    </div>
+    <div class="lib-actions">
+      <button class="icon-btn" id="btn-open-file" title="Открыть файл книги">
+        <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6M9 15h6"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-lib-theme" title="Тема оформления">
+        <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-lib-settings" title="Настройки">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="lib-main" id="lib-main">
+    <div id="scan-status" class="scan-status" hidden></div>
+
+    <section id="remember" class="remember" hidden></section>
+
+    <section id="pads" class="pads" hidden></section>
+
+    <section id="notebook" class="notebook" hidden>
+      <aside class="nb-side" id="nb-side"></aside>
+      <div class="nb-main" id="nb-main"></div>
+    </section>
+
+    <section id="shelves" class="shelves" hidden>
+      <div class="sh-main">
+        <div class="sh-head">
+          <h2 class="sh-title" id="sh-title"></h2>
+          <div class="sh-view" id="sh-view">
+            <button data-shview="grid" title="Обложки"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="8" rx="1"/><rect x="13.5" y="4" width="6.5" height="8" rx="1"/><rect x="4" y="14" width="6.5" height="6" rx="1"/><rect x="13.5" y="14" width="6.5" height="6" rx="1"/></svg></button>
+            <button data-shview="list" title="С описанием"><svg viewBox="0 0 24 24"><rect x="4" y="4.5" width="5" height="6.5" rx="1"/><path d="M12 6h8M12 9.5h6"/><rect x="4" y="13.5" width="5" height="6.5" rx="1"/><path d="M12 15h8M12 18.5h6"/></svg></button>
+          </div>
+        </div>
+        <div id="grid" class="grid"></div>
+        <p id="nothing-found" class="nothing" hidden>Ничего не найдено</p>
+        <nav class="folio" id="sh-folio" hidden></nav>
+      </div>
+      <aside class="sh-side" id="sh-tabs" aria-label="Полки"></aside>
+    </section>
+
+    <section id="empty" class="empty" hidden>
+      <div class="empty-art">
+        <div class="eb b1"></div><div class="eb b2"></div><div class="eb b3"></div>
+      </div>
+      <h1>Ваша домашняя библиотека</h1>
+      <p>Укажите папку, где лежат книги в&nbsp;форматах FB2 и&nbsp;EPUB.<br>Полка найдёт их&nbsp;все, включая вложенные папки, и&nbsp;запомнит, где вы&nbsp;остановились.</p>
+      <button class="primary-btn" id="btn-folder-empty">Выбрать папку с книгами</button>
+      <button class="link-btn" id="btn-open-file-empty">или открыть отдельный файл</button>
+    </section>
+
+    <section id="reconnect" class="empty" hidden>
+      <h1>С возвращением</h1>
+      <p>Браузер просит подтвердить доступ к&nbsp;папке <b id="reconnect-name"></b>.</p>
+      <button class="primary-btn" id="btn-reconnect">Открыть библиотеку</button>
+      <button class="link-btn" id="btn-folder-other">Выбрать другую папку</button>
+    </section>
+  </main>
+</section>
+
+<!-- ============ ЧИТАЛКА ============ -->
+<section id="reader" class="view" hidden>
+  <aside class="pad" id="pad" hidden aria-label="Блокнот"><div class="pad-sheet" id="pad-sheet"></div></aside>
+  <header class="r-top" id="r-top">
+    <button class="icon-btn" id="btn-back" title="В библиотеку (Esc)">
+      <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-toc" title="Оглавление (T)">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    </button>
+    <div class="r-title"><span id="r-book-title"></span><span id="r-book-author"></span></div>
+    <button class="icon-btn" id="btn-pad" title="Блокнот (N)">
+      <svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-bookmark" title="Закладка (B)">
+      <svg viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4z"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-search" title="Поиск по книге (Ctrl+F)">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    </button>
+    <button class="icon-btn text-btn" id="btn-settings" title="Шрифт и оформление">Aa</button>
+    <button class="icon-btn" id="btn-fullscreen" title="Полный экран (F11)">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="sheet" id="sheet"><div class="sheet-head" id="sheet-head"></div><div class="sheet-foot" id="sheet-foot"><div class="sf-bar"><i id="sf-fill"></i></div><div class="sf-text" id="sf-text"></div></div></div>
+    <div class="viewport" id="viewport">
+      <article class="flow book" id="flow"></article>
+      <div class="chapter-next" id="chapter-next" hidden></div>
+    </div>
+    <div class="bookmark-flag" id="bookmark-flag" hidden></div>
+    <div class="pins" id="pins"></div>
+    <div class="book-end" id="book-end" hidden>
+      <div class="be-in-wrap">
+        <div class="be-orn">· · ·</div>
+        <div class="be-kicker">Книга прочитана</div>
+        <h2 id="be-title"></h2>
+        <div class="be-author" id="be-author"></div>
+        <div class="be-rule"></div>
+        <div class="be-q">Что осталось с вами после этой книги?</div>
+        <textarea id="be-ta" placeholder="Впечатление о книге…" rows="4"></textarea>
+        <div class="be-row"><button class="link-btn" id="be-lib">В библиотеку</button><button class="link-btn" id="be-notes">Цитаты и заметки</button><button class="qp-save" id="be-save">Сохранить</button></div>
+        <div class="be-hint">Запишется в читательский дневник, в «Мои мысли о книге»</div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="r-bottom" id="r-bottom">
+    <div class="r-progress-line"><div id="r-progress-fill"></div></div>
+    <div class="r-status">
+      <span id="r-left"></span>
+      <span id="r-right"></span>
+    </div>
+  </footer>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <!-- Оглавление -->
+  <aside class="drawer" id="toc-drawer" hidden>
+    <div class="drawer-head">
+      <div class="drawer-book">
+        <div class="drawer-cover" id="toc-cover"></div>
+        <div>
+          <div class="drawer-title" id="toc-title"></div>
+          <div class="drawer-author" id="toc-author"></div>
+        </div>
+      </div>
+      <div class="segmented small" id="drawer-tabs">
+        <button data-tab="toc" class="active">Содержание</button>
+        <button data-tab="bookmarks">Закладки</button>
+        <button data-tab="notes">Заметки</button>
+        <button data-tab="quotes">Цитаты</button>
+      </div>
+    </div>
+    <nav class="toc-list" id="toc-list"></nav>
+    <div class="toc-list" id="bm-list" hidden></div>
+    <div class="toc-list" id="q-list" hidden></div>
+    <div class="toc-list" id="n-list" hidden></div>
+  </aside>
+
+  <!-- Поиск -->
+  <aside class="drawer right" id="search-drawer" hidden>
+    <div class="drawer-head">
+      <div class="lib-search in-drawer">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="book-search" type="search" placeholder="Искать в книге" autocomplete="off">
+      </div>
+      <div class="search-info" id="search-info"></div>
+    </div>
+    <div class="toc-list" id="search-results"></div>
+  </aside>
+
+  <!-- Настройки -->
+  <div class="popover" id="settings" hidden>
+    <div class="set-row themes" id="set-themes"></div>
+    <div class="set-row size-row">
+      <button class="step-btn" id="font-dec" title="Меньше (Ctrl −)"><span style="font-size:14px">A</span></button>
+      <div class="size-val"><span id="font-size-val">20</span></div>
+      <button class="step-btn" id="font-inc" title="Больше (Ctrl +)"><span style="font-size:22px">A</span></button>
+    </div>
+    <div class="set-tabs" id="set-tabs">
+      <button data-tab="text"><svg viewBox="0 0 24 24"><path d="M5 19L11 5h2l6 14M7.5 14h9"/></svg>Текст</button>
+      <button data-tab="read"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v16H6.5A2.5 2.5 0 0 0 4 21.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H12v16h5.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg>Чтение</button>
+    </div>
+    <div class="set-pane" data-pane="text">
+      <div class="set-label">Шрифт</div>
+      <div class="font-pick">
+        <button class="font-btn" id="font-btn"><span id="font-cur">Literata</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="font-menu" id="font-list" hidden></div>
+      </div>
+      <div class="set-label">Межстрочный интервал</div>
+      <div class="segmented full" id="set-lh">
+        <button data-v="1.35" title="Плотный"><svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg></button>
+        <button data-v="1.55" title="Обычный"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
+        <button data-v="1.8" title="Свободный"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h14"/></svg></button>
+      </div>
+      <div class="set-label">Ширина текста</div>
+      <div class="segmented full" id="set-width">
+        <button data-v="560">Узко</button>
+        <button data-v="680">Средне</button>
+        <button data-v="820">Широко</button>
+      </div>
+      <div class="set-toggles">
+        <label class="toggle"><input type="checkbox" id="set-justify"><span></span>Выравнивать по ширине</label>
+        <label class="toggle"><input type="checkbox" id="set-hyph"><span></span>Переносы слов</label>
+        <label class="toggle" title="Короткие слова не остаются в конце строки, кавычки выносятся за край, без одиноких слов в последней строке абзаца"><input type="checkbox" id="set-typo"><span></span>Аккуратная типографика</label>
+      </div>
+    </div>
+    <div class="set-pane" data-pane="read" hidden>
+      <div class="set-label">Страницы</div>
+      <div class="segmented full" id="set-cols">
+        <button data-v="1">Одна</button>
+        <button data-v="auto">Авто</button>
+        <button data-v="2">Разворот</button>
+        <button data-v="scroll">Лента</button>
+      </div>
+      <div class="set-label set-label-row"><span>Листание</span><button class="snd-chip" id="snd-chip" title="Звук листания: тихо → громче → без звука"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="w1" d="M16.5 9.5a3.5 3.5 0 0 1 0 5"/><path class="w2" d="M19 7a7 7 0 0 1 0 10"/><path class="mute" d="M17 9.5l4 5M21 9.5l-4 5"/></svg><span id="snd-txt">звук тихо</span></button></div>
+      <div class="segmented full" id="set-flip">
+        <button data-v="off">Нет</button>
+        <button data-v="slide" title="Страница сдвигается вбок">Сдвиг</button>
+        <button data-v="turn" title="Лист поворачивается вокруг корешка">Поворот</button>
+        <button data-v="curl" title="Страница загибается от угла">Загиб</button>
+      </div>
+      <div class="set-label">Фокус</div>
+      <div class="segmented full" id="set-focus">
+        <button data-v="off">Нет</button>
+        <button data-v="para" title="Ярко только абзац, который читаете; ↑ ↓, колесо или клик — другой абзац">Абзац</button>
+        <button data-v="sent" title="Ярко только предложение, которое читаете; ↑ ↓, колесо или клик — другое предложение">Предложение</button>
+        <button data-v="sheet" title="Текст на листе бумаги, вокруг — тёмный стол">Лист</button>
+      </div>
+      <div class="set-label">Автопрокрутка <span class="set-hint">пробел — пауза</span></div>
+      <div class="segmented full" id="set-auto">
+        <button data-v="off">Выкл</button>
+        <button data-v="150">150</button>
+        <button data-v="200">200</button>
+        <button data-v="250">250</button>
+        <button data-v="300">300</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Панель выделения -->
+  <div class="sel-bar" id="sel-bar" hidden>
+    <button data-act="translate"><svg viewBox="0 0 24 24"><path d="M4 5h9M8.5 3v2M6 5c1 3.5 3.5 6 7 7.5M11 5c-1 3.5-3.5 6.5-7 8"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg>Перевод</button>
+    <button data-act="meaning"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/></svg>Значение</button>
+    <button data-act="quote"><svg viewBox="0 0 24 24"><path d="M7 7h4v4c0 3-1.5 5-4 6M14 7h4v4c0 3-1.5 5-4 6"/></svg>Цитата</button>
+    <button data-act="note"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>Заметка</button>
+  </div>
+
+  <!-- Карточка перевода / значения -->
+  <div class="info-card" id="info-card" hidden>
+    <div class="ic-body" id="ic-body"></div>
+  </div>
+
+  <!-- Цитата: сохранено, теги -->
+  <div class="quote-pop" id="quote-pop" hidden>
+    <div class="qp-head">
+      <span class="qp-status" id="qp-status">Цитата сохранена</span>
+      <button class="icon-btn qp-close" id="qp-close" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="qp-text" id="qp-text"></div>
+    <div class="ta-wrap qp-body-wrap" id="qp-body-wrap" hidden>
+      <textarea id="qp-body" rows="3"></textarea>
+      <div class="qp-suggest link-suggest" id="qp-link-suggest" hidden></div>
+    </div>
+    <button class="link-btn qp-addthought" id="qp-addthought">+ добавить мысль</button>
+    <div class="qp-tags" id="qp-tags"></div>
+    <div class="qp-add">
+      <input id="qp-tag-input" type="text" placeholder="+ тег" autocomplete="off" maxlength="40">
+      <div class="qp-suggest" id="qp-suggest" hidden></div>
+    </div>
+    <div class="qp-foot">
+      <button class="link-btn qp-del" id="qp-delete">Удалить цитату</button>
+      <button class="link-btn" id="qp-cancel">Отмена</button>
+      <button class="qp-save" id="qp-save">Сохранить</button>
+    </div>
+  </div>
+
+
+  <!-- Сноска -->
+  <div class="note-pop" id="note-pop" hidden>
+    <div class="note-body book" id="note-body"></div>
+    <button class="link-btn" id="note-goto">Перейти к примечанию</button>
+  </div>
+</section>
+
+<!-- Настройки программы (на главной) -->
+<div class="popover ctx-menu" id="ctx-menu" hidden></div>
+<div class="stk-tip" id="stk-tip" hidden></div>
+<div class="popover lib-settings" id="lib-settings" hidden>
+  <div class="ls-title">Настройки</div>
+  <div class="set-label">Книги</div>
+  <div class="set-line">
+    <span class="set-line-label">Папка с книгами</span>
+    <button class="link-btn set-line-val" id="btn-folder" title="Выбрать папку с книгами"><span id="folder-name">выбрать</span></button>
+  </div>
+  <div class="set-line">
+    <span class="set-line-label">Порядок книг</span>
+    <select id="set-sort" class="set-select">
+      <option value="recent">сначала недавние</option><option value="title">по названию</option><option value="author">по автору</option>
+    </select>
+  </div>
+  <div class="set-label">Читательский дневник</div>
+  <div class="set-line">
+    <span class="set-line-label">Папка</span>
+    <button class="link-btn set-line-val" id="set-qdir" title="Где хранятся цитаты и заметки">—</button>
+  </div>
+  <div class="set-line">
+    <span class="set-line-label">Теги</span>
+    <button class="link-btn set-line-val" id="set-tags">настроить</button>
+  </div>
+  <div class="set-label">Перевод</div>
+  <div class="set-line">
+    <span class="set-line-label">Переводить на</span>
+    <select id="set-lang" class="set-select">
+      <option value="ru">русский</option><option value="en">английский</option><option value="uk">украинский</option>
+      <option value="de">немецкий</option><option value="fr">французский</option><option value="es">испанский</option>
+      <option value="it">итальянский</option><option value="pl">польский</option><option value="zh-CN">китайский</option>
+      <option value="ja">японский</option>
+    </select>
+  </div>
+  <button class="ls-help" id="btn-help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.2v.1"/></svg>Как пользоваться<kbd>F1</kbd></button>
+  <button class="ls-help" id="btn-tg"><svg viewBox="0 0 24 24"><path d="M21 4L3 11l6 2.2M21 4l-3 16-6.5-5M21 4L9 13.2v5.3l2.5-3.5"/></svg>Новости и обновления<span class="ls-sub">Telegram</span></button>
+  <div class="set-label">Главная</div>
+  <div class="set-toggles" style="margin-top:0">
+    <label class="toggle"><input type="checkbox" id="set-remember"><span></span>«Вспомнить» — старая цитата дня</label>
+    <label class="toggle"><input type="checkbox" id="set-guide"><span></span>Книга «Как здесь всё устроено» на полке</label>
+  </div>
+</div>
+
+  <!-- Управление тегами -->
+  <div class="popover tags-pop" id="tags-pop" hidden>
+    <div class="tp-head">
+      <div class="tp-title">Теги</div>
+      <button class="icon-btn qp-close" id="tp-close" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="tp-hint">Клик по названию — переименовать. Изменения применяются ко всем книгам и к читательскому дневнику.</div>
+    <div class="tp-list" id="tp-list"></div>
+  </div>
+
+<!-- Справка -->
+<div class="help" id="help" hidden>
+  <div class="help-card" role="dialog" aria-label="Как пользоваться Полкой">
+    <button class="icon-btn help-close" id="help-close" title="Закрыть (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="help-head">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="6" width="5" height="20" rx="1.5"/><rect x="12" y="4" width="5" height="22" rx="1.5"/><rect x="19.5" y="7" width="5" height="19" rx="1.5" transform="rotate(-12 22 16.5)"/><rect x="3" y="27" width="26" height="2" rx="1"/></svg>
+      <div><h1>Как пользоваться Полкой</h1><p>Домашняя читалка: ваши книги, ваш дневник, ничего лишнего.</p></div>
+    </div>
+    <nav class="help-nav" id="help-nav">
+      <a data-h="h-lib">Библиотека</a><a data-h="h-read">Чтение</a><a data-h="h-aa">Вид и режимы</a><a data-h="h-notes">Цитаты и заметки</a><a data-h="h-diary">Дневник</a><a data-h="h-keys">Клавиши</a><a data-h="h-about">О программе</a>
+    </nav>
+    <div class="help-body" id="help-body">
+      <section id="h-lib"><h2>Библиотека</h2>
+        <p><b>Папка с книгами</b> выбирается в шестерёнке на главной. Полка находит все FB2 и EPUB, в том числе во вложенных папках, и сама замечает новые книги.</p>
+        <p><b>Полки.</b> Книги сами встают на три полки: <b>Читаю сейчас</b> — начатые, <b>Отложенные</b> — ещё не открытые и не разложенные по вашим полкам, <b>Прочитано</b> — дочитанные. Если книг много, полка листается номерами страниц внизу, колесом мыши или стрелками <kbd>←</kbd> <kbd>→</kbd>.</p>
+        <p><b>Стикеры.</b> Если в книге есть ваши цитаты и мысли, из обложки торчат цветные стикеры — по одному на запись, цветом тега. Высота стикера — место в книге. Наведите — увидите цитату, нажмите — книга откроется на этом месте.</p>
+        <p><b>Все полки</b> стоят справа колонкой: у каждой название, число книг и корешки. Клик по полке открывает её слева. Кнопки над книгами переключают вид: обложки или книги с описанием. Вид запоминается для каждой полки.</p>
+        <p><b>Свои полки</b> — «+ Новая полка» внизу колонки. Правый клик по книге (или «⋯» на обложке) ставит её на полку, откладывает или отмечает прочитанной. Правый клик по своей полке — переименовать или убрать; книги при этом остаются.</p>
+        <p><b>Книги, к которым возвращаетесь всю жизнь</b> — стихи, любимые рассказы. Правый клик по их полке → «Не показывать в „Читаю сейчас“»: книги будут жить только на своей полке и не займут место среди того, что вы читаете сейчас.</p>
+        <p><b>Поиск</b> наверху ищет по названию и автору сразу на всех полках. Порядок книг выбирается в шестерёнке.</p>
+        <p><b>Вспомнить</b> — раз в день на главной появляется одна из ваших старых цитат. Её можно открыть в книге или попросить другую.</p>
+        <p><b>Заметки</b> — вкладка рядом с «Книгами»: все цитаты и мысли из всех книг, с поиском и тегами. Клик по записи открывает книгу на этом месте.</p>
+        <p><b>Блокноты</b> — третья вкладка: чистые листы, которые вы исписали в книгах. Лист можно открыть, дописать и перейти к книге.</p>
+      </section>
+      <section id="h-read"><h2>Чтение</h2>
+        <p><b>Листать</b> — стрелками <kbd>←</kbd><kbd>→</kbd>, колесом мыши или кликом по полю слева и справа от текста. Перетащить по тексту — выделить.</p>
+        <p><b>Панель сверху</b> появляется, когда мышь у верхнего края или по клику в середину страницы: оглавление, закладка, поиск, «Аа», полный экран.</p>
+        <p><b>Оглавление</b> <kbd>T</kbd> — там же вкладки «Закладки», «Заметки» и «Цитаты». <b>Закладка</b> — <kbd>B</kbd>. <b>Блокнот</b> <kbd>N</kbd> — чистый лист для записей справа от книги: кто кому родственник, планы, мысли. Сохраняется сам. Листы переключаются стрелками, как одна длинная страница. Закрыть — <kbd>Esc</kbd>, <kbd>Ctrl</kbd><kbd>N</kbd> или клик по тексту книги. <b>Поиск по книге</b> — <kbd>Ctrl</kbd><kbd>F</kbd>, дальше <kbd>F3</kbd>.</p>
+        <p><b>Сноски</b> открываются по клику на номер. <b>Иллюстрации</b> — по клику на весь экран, колесо мыши увеличивает.</p>
+        <p>Место чтения запоминается само: книга откроется там, где вы остановились.</p>
+        <p><b>После последней страницы</b> открывается страница «Книга прочитана» с полем для впечатления: оно сохраняется в дневник, а книга на главной отмечается прочитанной. Листните назад, чтобы вернуться к тексту.</p>
+      </section>
+      <section id="h-aa"><h2>Вид и режимы — «Аа»</h2>
+        <p><b>Наверху</b> — тема и размер шрифта (<kbd>Ctrl</kbd><kbd>+</kbd> и <kbd>Ctrl</kbd><kbd>−</kbd>).</p>
+        <p><b>Вкладка «Текст»</b> — шрифт, интервал, ширина строки, выравнивание, переносы и аккуратная типографика.</p>
+        <p><b>Вкладка «Чтение»:</b></p>
+        <ul>
+          <li><b>Страницы</b> — одна, разворот или «Лента», где текст прокручивается сверху вниз.</li>
+          <li><b>Листание</b> — сдвиг, поворот листа или загиб угла; рядом включается тихий шелест страницы.</li>
+          <li><b>Фокус</b> — «Абзац» или «Предложение»: ярким остаётся только то, что вы читаете, <kbd>↑</kbd><kbd>↓</kbd>, колесо или клик ведут дальше. «Лист» кладёт текст на лист бумаги.</li>
+          <li><b>Автопрокрутка</b> — книга листается сама с выбранной скоростью (слов в минуту). <kbd>Пробел</kbd> — пауза. Движение мышью тоже ненадолго её останавливает.</li>
+        </ul>
+      </section>
+      <section id="h-notes"><h2>Цитаты и заметки</h2>
+        <p><b>Выделите текст</b> — появится панель: <b>Перевод</b>, <b>Значение</b> (словарь и Википедия), <b>Цитата</b> и <b>Заметка</b>.</p>
+        <p>К цитате можно добавить мысль и теги. Сохранённое подчёркнуто в тексте; клик по подчёркиванию открывает запись, значок на полях — заметку.</p>
+        <p>В оглавлении на вкладке «Заметки» есть «О книге» — место для общего впечатления.</p>
+        <p><b>Теги</b> переименовываются и удаляются в шестерёнке на главной.</p>
+      </section>
+      <section id="h-diary"><h2>Читательский дневник</h2>
+        <p>Все цитаты, заметки и мысли о книгах сохраняются в папку <b>«Читательский дневник»</b> рядом с книгами: по файлу на книгу и на автора, обычным текстом.</p>
+        <p>Эти файлы можно открыть любой программой для заметок или просто прочитать. Правки, сделанные там, Полка подхватит при следующем открытии книги.</p>
+        <p>Там же хранится место чтения и закладки, поэтому, если папка синхронизируется (например, через OneDrive), на другом компьютере вы продолжите с того же места.</p>
+      </section>
+      <section id="h-keys"><h2>Клавиши</h2>
+        <div class="help-keys">
+          <div><kbd>←</kbd><kbd>→</kbd></div><div>листать</div>
+          <div><kbd>↑</kbd><kbd>↓</kbd></div><div>в «Ленте» — прокрутка, в фокусе — дальше по тексту</div>
+          <div><kbd>Пробел</kbd></div><div>пауза автопрокрутки</div>
+          <div><kbd>T</kbd></div><div>оглавление</div>
+          <div><kbd>B</kbd></div><div>закладка</div>
+          <div><kbd>N</kbd> · <kbd>Ctrl</kbd><kbd>N</kbd></div><div>блокнот к книге; Ctrl+N закрывает его и во время записи</div>
+          <div><kbd>Ctrl</kbd><kbd>F</kbd> · <kbd>F3</kbd></div><div>поиск по книге · следующее совпадение</div>
+          <div><kbd>Ctrl</kbd><kbd>+</kbd> · <kbd>Ctrl</kbd><kbd>−</kbd></div><div>крупнее · мельче</div>
+          <div><kbd>F</kbd> · <kbd>F11</kbd></div><div>полный экран</div>
+          <div><kbd>Home</kbd> · <kbd>End</kbd></div><div>начало · конец главы</div>
+          <div><kbd>Esc</kbd></div><div>закрыть окно, выйти из полного экрана, вернуться в библиотеку</div>
+          <div><kbd>F1</kbd></div><div>эта справка</div>
+        </div>
+      </section>
+      <section id="h-about"><h2>О программе</h2>
+        <p><b>Полка</b> <span id="help-ver"></span> — бесплатная домашняя читалка. Без рекламы, аккаунтов и слежки: книги и записи остаются у вас на компьютере.</p>
+        <p><b>Новости, обновления и вопросы</b> — в Telegram-канале <a class="help-link" id="help-tg">t.me/polka_reader_win</a>.</p>
+        <p class="help-small">Внутри — свободные компоненты: Electron, fflate, hyphen; шрифты Literata, Lora, PT Serif, PT Sans, IBM Plex Serif (SIL OFL); звук страницы — Kenney, CC0. Подробности — в файле Licenses.txt в папке программы. Перевод и «Значение» используют Google Translate, Викисловарь и Википедию и работают только с интернетом.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Иллюстрация крупно -->
+<div class="zoom" id="zoom" hidden>
+  <img id="zoom-img" alt="" draggable="false">
+  <button class="icon-btn zoom-close" id="zoom-close" title="Закрыть (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div class="zoom-hint" id="zoom-hint">Колёсико или клик — крупнее · перетаскивайте, чтобы сдвинуть · Esc — закрыть</div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<input type="file" id="file-input" accept=".fb2,.epub,.zip" hidden>
+<input type="file" id="dir-input" webkitdirectory multiple hidden>
+
+<!--SCRIPTS-->
+</body>
+</html>
