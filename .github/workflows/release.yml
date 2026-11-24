@@ -18,7 +18,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  tests:
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
   release:
+    needs: tests
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

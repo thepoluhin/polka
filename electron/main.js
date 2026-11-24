@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, screen } = requir
 Menu.setApplicationMenu(null);
 const path = require('path');
 const fs = require('fs');
+const { createHash } = require('crypto');
 
 const BOOK_RE = /\.(fb2|epub|fb2\.zip)$/i;
 const DEBUG = !!process.env.POLKA_DEBUG;
@@ -193,6 +194,12 @@ handle('pick-file', async () => {
 handle('allow-dropped', (e, p) => { if (p && BOOK_RE.test(p)) allowFile(p); });
 handle('scan', (e, dir) => (inRoots(dir) ? scanDir(dir) : { missing: !fs.existsSync(String(dir || '')), files: [], denied: true }));
 handle('read', (e, p) => { if (!canRead(p)) throw new Error('нет доступа к файлу'); return fs.promises.readFile(p); });
+handle('book-hash', async (e, p) => {
+  if (!canRead(p)) throw new Error('нет доступа к файлу');
+  const hash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(p)) hash.update(chunk);
+  return hash.digest('hex');
+});
 handle('stat', async (e, p) => {
   if (!canRead(p)) return null;
   try { const s = await fs.promises.stat(p); return { name: path.basename(p), size: s.size, mtime: s.mtimeMs }; } catch (err) { return null; }
@@ -276,7 +283,11 @@ handle('note-create', async (e, { dir, sub, name, content, onlyIfMissing }) => {
   await fs.promises.mkdir(folder, { recursive: true });
   const base = safeName(name);
   let p = path.join(folder, base + '.md');
-  if (onlyIfMissing) { if (!fs.existsSync(p)) await writeAtomic(p, content); return p; }
+  if (onlyIfMissing) {
+    try { await fs.promises.writeFile(p, content, { encoding: 'utf8', flag: 'wx' }); }
+    catch (err) { if (err.code !== 'EEXIST') throw err; }
+    return p;
+  }
   for (let i = 2; fs.existsSync(p); i++) p = path.join(folder, base + ' (' + i + ').md');
   await writeAtomic(p, content);
   return p;
@@ -289,7 +300,11 @@ handle('note-rmdir', async (e, { dir, sub }) => {
   try { await fs.promises.rmdir(d); return true; } catch (err) { return false; }
 });
 const mdOk = (p) => /\.md$/i.test(String(p)) && inRoots(p);
-handle('note-read', async (e, p) => { if (!mdOk(p)) return null; try { return await fs.promises.readFile(p, 'utf8'); } catch (err) { return null; } });
+handle('note-read', async (e, p) => {
+  if (!mdOk(p)) throw new Error('файл вне дневника');
+  try { return (await fs.promises.readFile(p, 'utf8')).replace(/\r\n/g, '\n'); }
+  catch (err) { if (err.code === 'ENOENT') return null; throw err; }
+});
 handle('note-write', async (e, p, content) => { if (!mdOk(p)) throw new Error('файл вне дневника'); await writeAtomic(p, content); return true; });
 handle('note-delete', async (e, p) => { if (!mdOk(p)) return false; try { await fs.promises.unlink(p); return true; } catch (err) { return false; } });
 // служебный файл «Полки» в папке дневника (.polka/…json): место чтения, закладки, копия записей

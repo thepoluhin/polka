@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('shelf', {
   pickFile: call('pick-file'),
   scan: call('scan'),
   read: call('read'),
+  bookHash: call('book-hash'),
   stat: call('stat'),
   initialFile: call('initial-file'),
   openExternal: call('open-external'),

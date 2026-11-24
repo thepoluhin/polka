@@ -15,7 +15,7 @@ function scan(d) { let o = []; for (const it of fs.readdirSync(d, { withFileType
   await page.click('#btn-folder-empty');
   await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length > 2);
   await page.evaluate(() => { const P = window.__polka; P.changeSetting('theme', 'sepia'); P.changeSetting('focus', 'off'); P.changeSetting('cols', 'auto'); P.changeSetting('flip', 'slide'); });
-  await page.click('.book-card[data-id^="Ветров"]');
+  await page.click('.book-card[data-book-name^="Ветров"]');
   await page.waitForFunction(() => window.__polka.R.book && !window.__polka.R.rendering);
   await page.evaluate(async () => { const P = window.__polka; await P.goTo(P.R.book.chapters.length - 1, 'last'); });
   await page.waitForTimeout(3200);
@@ -39,9 +39,9 @@ function scan(d) { let o = []; for (const it of fs.readdirSync(d, { withFileType
   await page.screenshot({ path: OUT + '/end-sheet.png' });
   await page.click('#be-lib'); await page.waitForTimeout(500);
   ok(await page.isVisible('#library'), '«В библиотеку»');
-  ok(!(await page.isVisible('.book-card[data-id^="Ветров"]')), 'книга ушла с открытой полки');
+  ok(!(await page.isVisible('.book-card[data-book-name^="Ветров"]')), 'книга ушла с открытой полки');
   await page.click('.sh-tab[data-shelf="done"]');
-  ok(await page.isVisible('.book-card[data-id^="Ветров"]'), 'и стоит на полке «Прочитано»');
+  ok(await page.isVisible('.book-card[data-book-name^="Ветров"]'), 'и стоит на полке «Прочитано»');
   ok(!errs.length, 'ошибок нет ' + errs.join(' | '));
   await b.close();
 })();

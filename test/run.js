@@ -1,6 +1,7 @@
 // Автотест: подменяем нативный API (как в Electron) и прогоняем сценарии
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
+const { pathToFileURL } = require('node:url');
 const OUT = process.argv[2] || path.join(require('os').tmpdir(), 'polka-shots');
 const BOOKS = path.resolve(__dirname, '../testbooks');
 fs.mkdirSync(OUT, { recursive: true });
@@ -22,8 +23,8 @@ function scan(d) { let o = []; for (const it of fs.readdirSync(d, { withFileType
       initialFile: async () => null, openExternal() {}, toggleFullscreen() {}, setTheme() {}, onOpenFile() {},
     };
   }, BOOKS);
-  const clickBook = async (pfx, opt) => { for (const t of ['reading', 'later', 'done']) { if (await page.isVisible('#grid [data-id^="' + pfx + '"]')) break; if (await page.isVisible('.sh-tab[data-shelf="' + t + '"]')) await page.click('.sh-tab[data-shelf="' + t + '"]'); } await page.click('#grid [data-id^="' + pfx + '"]', opt); };
-  await page.goto('file://' + path.resolve(__dirname, '../dist/app/index.html'));
+  const clickBook = async (pfx, opt) => { for (const t of ['reading', 'later', 'done']) { if (await page.isVisible('#grid [data-book-name^="' + pfx + '"]')) break; if (await page.isVisible('.sh-tab[data-shelf="' + t + '"]')) await page.click('.sh-tab[data-shelf="' + t + '"]'); } await page.click('#grid [data-book-name^="' + pfx + '"]', opt); };
+  await page.goto(pathToFileURL(path.resolve(__dirname, '../dist/app/index.html')).href);
   await page.screenshot({ path: OUT + '/01-empty.png' });
   await page.click('#btn-folder-empty');
   await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length > 0);
