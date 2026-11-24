@@ -4,6 +4,7 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = BookParser.esc;
+  const { BOOK_SEC, PAD_SEC, PAD_END, bookThoughtsRange, padRange, sectionStart } = DiaryMarkdown;
   const BUILD_DATE = '__BUILD_DATE__';
   const native = window.shelf || null;
   const LS = {
@@ -203,8 +204,17 @@
         const st = await native.guideStat().catch(() => null);
         if (st && st.size) out.push({ name: GUIDE_NAME, size: st.size, mtime: Date.now(), builtin: true });
       }
-      out.forEach((e) => { e.id = e.builtin ? GUIDE_ID : e.name + '|' + e.size; });
-      return out;
+      const cache = new Map(await DB.get('kv', 'bookHashes').catch(() => null) || []);
+      for (const e of out) {
+        try { await identifyBook(e, cache); }
+        catch (err) { console.warn(e.name, err); }
+      }
+      const paths = new Set(out.filter((e) => e.path).map((e) => e.path));
+      if (!this.missing && paths.size) {
+        DB.put('kv', Array.from(cache).filter(([p]) => paths.has(p)), 'bookHashes').catch(console.warn);
+      }
+      migrateBookKeys(out);
+      return [...new Map(out.filter((e) => e.id).map((e) => [e.id, e])).values()];
     },
     async read(e) {
       if (e.bytes) return e.bytes;
@@ -214,6 +224,68 @@
       return new Uint8Array(await f.arrayBuffer());
     },
   };
+
+  const legacyBookKey = (e) => e.name + '|' + e.size;
+  async function identifyBook(e, cache = new Map()) {
+    if (e.builtin) { e.id = GUIDE_ID; return; }
+    const cached = e.path && cache.get(e.path);
+    let hash;
+    if (cached && cached.size === e.size && cached.mtime === e.mtime) hash = cached.hash;
+    else {
+      if (e.path && native.bookHash) hash = await native.bookHash(e.path);
+      else {
+        const digest = await crypto.subtle.digest('SHA-256', await Src.read(e));
+        hash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+      }
+      if (e.path) cache.set(e.path, { size: e.size, mtime: e.mtime, hash });
+    }
+    e.id = 'sha256-' + hash;
+  }
+
+  function migrateBookKeys(entries) {
+    const aliases = LS.get('bookAliases', {});
+    const groups = new Map();
+    for (const e of entries) {
+      if (e.builtin) continue;
+      const key = legacyBookKey(e);
+      if (!groups.has(key)) groups.set(key, new Set());
+      groups.get(key).add(e.id || null);
+    }
+    for (const [key, ids] of groups) {
+      if (ids.has(null)) continue;
+      const id = ids.values().next().value;
+      aliases[key] = ids.size === 1 && (!Object.hasOwn(aliases, key) || aliases[key] === id) ? id : null;
+    }
+    LS.set('bookAliases', aliases);
+    for (const store of ['progress', 'bookmarks', 'bookmarksT', 'quotes', 'notes', 'bookNotes', 'pads', 'notePaths']) {
+      const records = LS.get(store, {});
+      let changed = false;
+      for (const key of Object.keys(records)) {
+      const id = Object.hasOwn(aliases, key) && aliases[key];
+        if (!id) continue;
+        if (Object.hasOwn(records, id)) continue;
+        records[id] = records[key];
+        delete records[key];
+        changed = true;
+      }
+      if (changed) LS.set(store, records);
+    }
+    const list = shelves();
+    let changed = false;
+    for (const shelf of list) {
+      if (!Array.isArray(shelf.books) || !shelf.books.some((id) => aliases[id])) continue;
+      shelf.books = [...new Set(shelf.books.map((id) => aliases[id] || id))];
+      changed = true;
+    }
+    if (changed) saveShelves(list);
+  }
+
+  async function identifyOpenedBook(e) {
+    try { await identifyBook(e); }
+    catch (err) { console.warn(err); toast('Не удалось прочитать файл книги'); return false; }
+    migrateBookKeys([...L.entries, e]);
+    return true;
+  }
 
   // ============================================================
   //                          Библиотека
@@ -652,11 +724,11 @@
       if (mode === 'list') {
         const bl = bookBlurb(b, p);
         const text = bl ? '<div class="br-text' + (bl.serif ? ' br-snip' : '') + '"><span class="br-label">' + bl.kind + ' · </span>' + esc(bl.text) + '</div>' : '';
-        return '<button class="book-row" data-id="' + esc(b.e.id) + '"><div class="br-cover">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more + '</div><div class="br-info">' +
+        return '<button class="book-row" data-id="' + esc(b.e.id) + '" data-book-name="' + esc(b.e.name) + '"><div class="br-cover">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more + '</div><div class="br-info">' +
           '<div class="br-title">' + esc(b.title) + '</div><div class="br-author">' + esc(b.author || ' ') + '</div>' +
           (metaLine ? '<div class="bc-meta">' + metaLine + '</div>' : '') + text + '</div></button>';
       }
-      return '<button class="book-card" data-id="' + esc(b.e.id) + '" title="' + esc(b.title + (b.author ? ' — ' + b.author : '')) + '">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more +
+      return '<button class="book-card" data-id="' + esc(b.e.id) + '" data-book-name="' + esc(b.e.name) + '" title="' + esc(b.title + (b.author ? ' — ' + b.author : '')) + '">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more +
         '<div class="bc-title">' + esc(b.title) + '</div><div class="bc-author">' + esc(b.author || ' ') + '</div>' +
         '<div class="bc-meta">' + metaLine + '</div></button>';
     }).join('');
@@ -1782,11 +1854,8 @@
   });
   $('be-save').onclick = async () => {
     const body = $('be-ta').value.replace(/\s+$/, '');
-    const all = allBookThoughts();
-    if (body.trim()) all[R.id] = { body, t: Date.now() }; else delete all[R.id];
-    LS.set('bookNotes', all);
-    if (native) { try { await writeBookThoughts(body, noteCtx()); } catch (e) { console.error(e); toast('Не удалось записать в дневник: ' + (e.message || e), 5000); return; } }
-    toast(body.trim() ? 'Сохранено в дневник' : 'Впечатление удалено');
+    const status = await saveBookThoughts(body, noteCtx());
+    toast(status.message, status.failed ? 5000 : undefined);
   };
   $('be-lib').onclick = () => closeBook(false);
   $('be-notes').onclick = () => openToc('notes');
@@ -2372,7 +2441,8 @@
     $('file-input').onchange = async () => {
       const f = $('file-input').files[0]; $('file-input').value = '';
       if (!f) return;
-      const e = { name: f.name, size: f.size, mtime: f.lastModified, file: f, id: f.name + '|' + f.size };
+      const e = { name: f.name, size: f.size, mtime: f.lastModified, file: f };
+      if (!await identifyOpenedBook(e)) return;
       if (!L.entries.some((x) => x.id === e.id)) L.entries.push(e);
       await openEntry(e);
     };
@@ -2382,7 +2452,8 @@
   async function openPath(p) {
     const st = await native.stat(p);
     if (!st) { toast('Файл не найден'); return; }
-    const e = { name: st.name, size: st.size, mtime: st.mtime, path: p, id: st.name + '|' + st.size };
+    const e = { name: st.name, size: st.size, mtime: st.mtime, path: p };
+    if (!await identifyOpenedBook(e)) return;
     const existing = L.entries.find((x) => x.id === e.id);
     if (!existing) {
       const folder = LS.get('folder', '');
@@ -2393,7 +2464,7 @@
       }
       L.entries.push(e);
     }
-    await openEntry(existing || e);
+    await openEntry(e);
   }
 
   // ============================================================
@@ -2751,7 +2822,8 @@
     const f = e.dataTransfer.files[0];
     if (!f || !/\.(fb2|epub|zip)$/i.test(f.name)) return;
     if (native && native.pathOf) { const p = native.pathOf(f); if (p) return openPath(p); }
-    const entry = { name: f.name, size: f.size, mtime: f.lastModified, file: f, id: f.name + '|' + f.size };
+    const entry = { name: f.name, size: f.size, mtime: f.lastModified, file: f };
+    if (!await identifyOpenedBook(entry)) return;
     if (!L.entries.some((x) => x.id === entry.id)) L.entries.push(entry);
     openEntry(entry);
   });
@@ -3214,7 +3286,7 @@
   async function ensureAuthorNote(dir, author, bookName) {
     const p = await native.noteCreate({ dir, sub: ['Авторы'], name: author, onlyIfMissing: true,
       content: '---\nтип: автор\n---\n\n# ' + author + '\n\n## Книги\n' });
-    const md0 = (await native.noteRead(p)) || '';
+    const md0 = await readNoteForUpdate(p);
     let md = repairAuthorNote(md0);
     const line = '- [[' + bookName + ']]';
     if (!md.split('\n').some((l) => l.trim() === line)) {
@@ -3224,7 +3296,13 @@
     if (md !== md0) await native.noteWrite(p, md);
   }
   // заметка книги: своё имя для каждой книги (одноимённые книги разных авторов не смешиваются)
-  const noteBelongs = (md, id) => { const m = md.match(/^polka: "polka:\/\/open\?book=([^"&]+)/m); try { return !!m && decodeURIComponent(m[1]) === id; } catch (e) { return false; } };
+  const bookKeyMatches = (key, id) => key === id || LS.get('bookAliases', {})[key] === id;
+  const noteBelongs = (md, id) => { const m = md.match(/^polka: "polka:\/\/open\?book=([^"&]+)/m); try { return !!m && bookKeyMatches(decodeURIComponent(m[1]), id); } catch (e) { return false; } };
+  async function readNoteForUpdate(p) {
+    const md = await native.noteRead(p);
+    if (md == null) throw new Error('Файл дневника исчез во время сохранения');
+    return md;
+  }
   const baseName = (p) => String(p).split(/[\\/]/).pop().replace(/\.md$/i, '');
   async function bookNotePath(ctx, create) {
     const dir = create ? await quotesDir() : await quotesDirQuiet();
@@ -3261,7 +3339,9 @@
     ctx = ctx || noteCtx();
     const p = await ensureBookNote(ctx);
     if (!p) return null;
-    const lines = ((await native.noteRead(p)) || '').split('\n');
+    const md = await readNoteForUpdate(p);
+    if (!noteBelongs(md, ctx.id)) throw new Error('Файл дневника относится к другой книге');
+    const lines = md.split('\n');
     const blk = findBlock(lines, it.id);
     if (blk && changed) {
       const f = parseBlock(lines, blk);
@@ -3306,31 +3386,44 @@
     await native.noteWrite(file, tidy(lines));
   });
   // «Мои мысли о книге» — раздел вверху заметки книги
-  const BOOK_SEC = '## Мои мысли о книге';
-  function bookThoughtsRange(lines) {
-    const at = lines.indexOf(BOOK_SEC);
-    if (at < 0) return null;
-    let e = at + 1;
-    while (e < lines.length && !/^> \[!(quote|note)\]/.test(lines[e]) && !/^## /.test(lines[e])) e++;
-    return { at, e };
-  }
   const writeBookThoughts = (body, ctx) => serial(async () => {
     ctx = ctx || noteCtx();
     const p = await ensureBookNote(ctx);
     if (!p) return null;
-    const lines = ((await native.noteRead(p)) || '').split('\n');
+    const md = await readNoteForUpdate(p);
+    if (!noteBelongs(md, ctx.id)) throw new Error('Файл дневника относится к другой книге');
+    const lines = md.split('\n');
     const r = bookThoughtsRange(lines);
-    let at;
-    if (r) { lines.splice(r.at, r.e - r.at); at = r.at; }
-    else {
-      at = lines.findIndex((l) => /\[открыть в Полке\]\(polka:\/\/open\?book=[^&)]*\)\s*$/.test(l));
-      at = at >= 0 ? at + 1 : lines.findIndex((l) => /^# /.test(l)) + 1;
-    }
+    const at = r ? r.at : sectionStart(lines);
+    if (r) lines.splice(at, r.after - at);
     if (body.trim()) lines.splice(at, 0, '', BOOK_SEC, '', ...body.trim().split('\n'), '');
     await native.noteWrite(p, tidy(lines));
     setupGraph();
     return p;
   });
+
+  async function saveBookThoughts(body, ctx) {
+    const local = body.trim() ? 'Сохранено в Полке' : 'Впечатление удалено в Полке';
+    const entry = { body, t: Date.now(), pending: !!native };
+    const all = allBookThoughts();
+    if (body.trim() || native) all[ctx.id] = entry; else delete all[ctx.id];
+    if (!LS.set('bookNotes', all)) return { message: 'Не удалось сохранить впечатление в Полке', failed: true };
+    if (!native) return { message: local };
+    try {
+      if (await writeBookThoughts(body, ctx)) {
+        const current = allBookThoughts();
+        if (current[ctx.id]?.pending && current[ctx.id].t === entry.t && current[ctx.id].body === body) {
+          if (body.trim()) current[ctx.id].pending = false; else delete current[ctx.id];
+          LS.set('bookNotes', current);
+        }
+        return { message: body.trim() ? 'Сохранено в дневник' : 'Впечатление удалено' };
+      }
+      return { message: local + '. Папка дневника не выбрана или файл недоступен', failed: true };
+    } catch (err) {
+      console.error(err);
+      return { message: local + '. Не удалось обновить файл дневника', failed: true };
+    }
+  }
 
   // ---- синхронизация с дневником при открытии книги ----
   // • правки из Obsidian (мысли, теги, текст цитаты) переносятся в «Полку»;
@@ -3377,7 +3470,7 @@
         if (!/^>/.test(l) || !/\[открыть в Полке\]\(polka:/.test(l)) return;
         const link = (l.match(/\((polka:[^)\s]+)\)/) || [])[1];
         const id = linkParam(link, 'q') || linkParam(link, 'n');
-        if (!id || ids.has(id) || linkParam(link, 'book') !== ctx.id) return;
+        if (!id || ids.has(id) || !bookKeyMatches(linkParam(link, 'book'), ctx.id)) return;
         const blk = findBlock(lines, id);
         if (!blk) return;
         const f = parseBlock(lines, blk);
@@ -3392,7 +3485,7 @@
       const r = bookThoughtsRange(lines);
       const bt = r ? lines.slice(r.at + 1, r.e).join('\n').trim() : '';
       const all = allBookThoughts();
-      if (bt && bt !== ((all[R.id] || {}).body || '').trim()) { all[R.id] = { body: bt, t: Date.now() }; LS.set('bookNotes', all); changed++; }
+      if (bt && !all[R.id]?.pending && bt !== ((all[R.id] || {}).body || '').trim()) { all[R.id] = { body: bt, t: Date.now() }; LS.set('bookNotes', all); changed++; }
       if (!bt && all[R.id] && r === null && (all[R.id].body || '').trim()) { /* в файле раздела нет — оставляем как есть */ }
     }
     // записи, лежащие в чужой (общей) заметке — переносим в свою
@@ -3424,8 +3517,10 @@
   async function runPendingDeletes() {
     const pend = LS.get('pendingDeletes', []);
     if (!pend.length || !native) return;
-    LS.set('pendingDeletes', []);
-    for (const d of pend) await removeItemBlock(d.file, d.id);
+    for (const d of pend) {
+      await removeItemBlock(d.file, d.id);
+      LS.set('pendingDeletes', LS.get('pendingDeletes', []).filter((x) => x.file !== d.file || x.id !== d.id));
+    }
   }
 
   // переезд со старой схемы «файл на цитату» (при открытии книги)
@@ -3448,6 +3543,14 @@
         if (hmd && !hmd.includes('[!quote]') && /tags:\n {2}- книга/.test(hmd) && oldName !== linkName(bookTitle())) await native.noteDelete(hub);
         await native.noteRmdir({ dir, sub: [oldName] });
       }
+    }
+    const ctx = noteCtx();
+    if (ctx.items.some((it) => it.pendingDiary) && await quotesDirQuiet()) {
+      for (const it of ctx.items.filter((it) => it.pendingDiary)) {
+        const p = await writeItem(it, ctx);
+        if (p) markItemExported(ctx.id, it.kind, it.id, p);
+      }
+      if (R.id !== ctx.id) return;
     }
     await syncBook();
     await syncPadFromDiary().catch((e) => console.warn(e));
@@ -3518,7 +3621,7 @@
   async function saveItem(kind, s, tags, body) {
     const ctx = noteCtx();
     const it = { id: (kind === 'note' ? 'n' : 'q') + Date.now().toString(36), ch: R.ch, off: s.off, len: s.len, text: s.text,
-      chapter: (R.tocCurrent && R.tocCurrent.title !== R.book.title && R.tocCurrent.title) || '', pct: currentPct(), tags: tags || [], t: Date.now() };
+      chapter: (R.tocCurrent && R.tocCurrent.title !== R.book.title && R.tocCurrent.title) || '', pct: currentPct(), tags: tags || [], t: Date.now(), pendingDiary: !!native };
     if (kind === 'note') it.body = body || ''; else if (body && body.trim()) it.note = body.trim();
     const list = kind === 'note' ? bookNotes() : bookQuotes();
     list.push(it);
@@ -3529,10 +3632,20 @@
     paintQuotes();
     let status = 'Сохранено';
     if (native) {
-      try { const p = await writeItem(Object.assign({ kind }, it), ctx); if (p) updateItem(kind, it.id, { file: p, v2: true }); else status = 'Сохранено в книге (папка не выбрана)'; }
-      catch (err) { status = 'Сохранено в книге, но в дневник не записано'; console.error(err); toast('Не удалось записать в дневник: ' + (err.message || err), 5000); }
+      try { const p = await writeItem(Object.assign({ kind }, it), ctx); if (p) markItemExported(ctx.id, kind, it.id, p); else status = 'Сохранено в книге (папка не выбрана)'; }
+      catch (err) { status = 'Сохранено в книге, но в дневник не записано. Повторим при открытии книги'; console.error(err); toast(status, 5000); }
     } else status = 'Сохранено в книге';
     return { it: itemById(kind, it.id), status };
+  }
+
+  function markItemExported(bookId, kind, itemId, file) {
+    const store = kind === 'note' ? 'notes' : 'quotes';
+    const all = LS.get(store, {});
+    const it = (all[bookId] || []).find((item) => item.id === itemId);
+    if (!it) return;
+    Object.assign(it, { file, v2: true });
+    delete it.pendingDiary;
+    LS.set(store, all);
   }
 
   // ---------- окошко записи: черновик или сохранённая цитата / заметка ----------
@@ -3580,7 +3693,10 @@
     const same = (x) => x.ch === R.ch && x.off === s.off && x.len === s.len;
     const dup = kind === 'note' ? bookNotes().find(same) : bookQuotes().find(same);
     if (dup) {
-      if (native && kind === 'quote') writeQuote(dup).then((p) => p && updateQuote(dup.id, { file: p, v2: true })).catch(() => {});
+      if (native && kind === 'quote') {
+        const ctx = noteCtx();
+        writeItem(Object.assign({ kind }, dup), ctx).then((p) => p && markItemExported(ctx.id, kind, dup.id, p)).catch(() => {});
+      }
       openSaved(Object.assign({ kind }, dup), rects, kind === 'note' ? 'Эта заметка уже есть' : 'Эта цитата уже сохранена'); return;
     }
     openPop({ mode: 'draft', kind, s, text: s.text, tags: [], body0: '' }, rects, kind === 'note' ? 'Новая заметка' : 'Новая цитата');
@@ -3945,12 +4061,10 @@
     $('bn-cancel').onclick = () => { $('bn-view').hidden = false; $('bn-edit').hidden = true; };
     $('bn-save').onclick = async () => {
       const body = ta.value.replace(/\s+$/, '');
-      const all = allBookThoughts();
-      if (body.trim()) all[R.id] = { body, t: Date.now() }; else delete all[R.id];
-      LS.set('bookNotes', all);
-      if (native) { try { await writeBookThoughts(body, noteCtx()); } catch (e) { console.error(e); toast('Не удалось записать в дневник: ' + (e.message || e), 5000); } }
-      renderNotesList();
-      toast('Сохранено');
+      const ctx = noteCtx();
+      const status = await saveBookThoughts(body, ctx);
+      if (R.book && R.id === ctx.id) renderNotesList();
+      toast(status.message, status.failed ? 5000 : undefined);
     };
   }
   $('n-list').addEventListener('click', (ev) => {
@@ -4097,7 +4211,7 @@
     const num = (k) => { const x = String(url).match(new RegExp('[?&]' + k + '=(\\d+)')); return x ? +x[1] : null; };
     const ch = num('ch'), off = num('off');
     for (let i = 0; i < 100 && (L.scanning || !L.entries.length); i++) await sleep(100);
-    const e = L.entries.find((x) => x.id === id) || L.entries.find((x) => x.name === id.split('|')[0]);
+    const e = L.entries.find((x) => bookKeyMatches(id, x.id));
     if (!e) { toast('Книга из ссылки не найдена в папке'); return; }
     const qid = (String(url).match(/[?&][qn]=([0-9a-z]+)/) || [])[1];
     const wasOpen = R.book && R.id === e.id && !reader.hidden;
@@ -4414,7 +4528,6 @@
   // Хранится в polka.pads: { [id книги]: { pages: [текст листа…], t, title, author } }.
   // Сохраняется сам — при закрытии и через секунду тишины. В дневнике — раздел «## Блокнот» в файле книги,
   // листы разделены строкой «---».
-  const PAD_SEC = '## Блокнот';
   const pads = () => LS.get('pads', {});
   const padOf = (id) => { const x = pads()[id]; return x && Array.isArray(x.pages) ? x : null; };
   const padText = (x) => (x ? x.pages.join('\n\n---\n\n').trim() : '');
@@ -4425,39 +4538,30 @@
     return { id, title: m.title || x.title || 'Без названия', author: (m.authors || [])[0] || x.author || '', series: m.series || '',
       items: [].concat(((LS.get('quotes', {}) || {})[id] || []).map((it) => Object.assign({ kind: 'quote' }, it)), ((LS.get('notes', {}) || {})[id] || []).map((it) => Object.assign({ kind: 'note' }, it))) };
   }
-  function padRange(lines) {
-    const at = lines.indexOf(PAD_SEC);
-    if (at < 0) return null;
-    let e = at + 1;
-    while (e < lines.length && !/^> \[!(quote|note)\]/.test(lines[e]) && !/^## /.test(lines[e])) e++;
-    return { at, e };
-  }
   const writePadNote = (id) => serial(async () => {
     if (!native || !native.noteRead) return null;
     const ctx = padCtxFor(id);
     const p = await ensureBookNote(ctx);
     if (!p) return null;
-    const lines = ((await native.noteRead(p)) || '').split('\n');
+    const md = await readNoteForUpdate(p);
+    if (!noteBelongs(md, ctx.id)) throw new Error('Файл дневника относится к другой книге');
+    const lines = md.split('\n');
     const r = padRange(lines);
-    let at;
-    if (r) { lines.splice(r.at, r.e - r.at); at = r.at; }
-    else {
-      const t = bookThoughtsRange(lines);
-      if (t) at = t.e;
-      else { at = lines.findIndex((l) => /\[открыть в Полке\]\(polka:\/\/open\?book=[^&)]*\)\s*$/.test(l)); at = at >= 0 ? at + 1 : lines.findIndex((l) => /^# /.test(l)) + 1; }
-    }
+    const at = r ? r.at : (bookThoughtsRange(lines)?.after ?? sectionStart(lines));
+    if (r) lines.splice(at, r.after - at);
     const body = padText(padOf(id));
-    if (body) lines.splice(at, 0, '', PAD_SEC, '', ...body.split('\n'), '');
+    if (body) lines.splice(at, 0, '', PAD_SEC, '', ...body.split('\n'), '', PAD_END, '');
     await native.noteWrite(p, tidy(lines));
     return p;
   });
   // при открытии книги: правки блокнота, сделанные в файле дневника, подтягиваем
   async function syncPadFromDiary() {
     if (!native || !R.book) return;
-    const p = await bookNotePath(noteCtx(), false);
+    const ctx = noteCtx();
+    const p = await bookNotePath(ctx, false);
     if (!p) return;
     const md = await native.noteRead(p);
-    if (md == null) return;
+    if (md == null || R.id !== ctx.id) return;
     const lines = md.split('\n'), r = padRange(lines);
     if (!r) return;
     const text = lines.slice(r.at + 1, r.e).join('\n').trim();

@@ -4,7 +4,8 @@
   "private": true,
   "description": "Полка — читалка FB2 и EPUB",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "test": "node test/review-regressions.js && node test/run.js"
   },
   "keywords": [],
   "author": "Polka",
@@ -20,6 +21,7 @@
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
     "hyphen": "^1.14.1",
+    "playwright": "1.65.1",
     "resedit": "^3.1.0"
   }
 }

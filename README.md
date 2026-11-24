@@ -88,7 +88,7 @@
 Electron 45 и чистые HTML, CSS и JavaScript — без фреймворков. Собственный разбор FB2 и EPUB, вёрстка страниц на CSS-колонках, подсветки через CSS Custom Highlight API, переносы — словари TeX. Всё, включая шрифты и звук, собирается в один файл интерфейса.
 
 ```
-src/        интерфейс: index.html, styles.css, parsers.js, app.js
+src/        интерфейс, парсеры книг и разметка дневника
 electron/   главный процесс и мост к диску (sandbox, contextIsolation, CSP)
 build/      сборка, установщик NSIS, книга-путеводитель
 test/       автотесты на Playwright и в настоящем Electron
@@ -105,6 +105,15 @@ bash build/make-installer.sh                    # dist/Polka-Setup-<версия
 ```
 
 `dist/Полка.html` — та же программа одним файлом: открывается в Edge или Chrome без установки.
+
+Проверки перед выпуском (Node.js 22):
+
+```bash
+npm ci
+npx playwright install chromium
+npm run build
+npm test
+```
 
 Дизайн-код — цвета тем, шрифты, сетка, компоненты и то, чего мы не делаем, — в [docs/DESIGN.md](docs/DESIGN.md).
 

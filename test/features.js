@@ -43,7 +43,7 @@ function fake(url) {
       noteCreate: (o) => window.__ncreate(o), noteRead: (p) => window.__nread(p), noteWrite: (p, c) => window.__nwrite(p, c), noteDelete: (p) => window.__ndel(p), noteResolve: (o) => window.__nres(o), noteRmdir: (o) => window.__nrmdir(o), obsidianGraph: (d, done) => window.__graph(d, done),
     };
   }, BOOKS);
-  const clickBook = async (pfx, opt) => { for (const t of ['reading', 'later', 'done']) { if (await page.isVisible('#grid [data-id^="' + pfx + '"]')) break; if (await page.isVisible('.sh-tab[data-shelf="' + t + '"]')) await page.click('.sh-tab[data-shelf="' + t + '"]'); } await page.click('#grid [data-id^="' + pfx + '"]', opt); };
+  const clickBook = async (pfx, opt) => { for (const t of ['reading', 'later', 'done']) { if (await page.isVisible('#grid [data-book-name^="' + pfx + '"]')) break; if (await page.isVisible('.sh-tab[data-shelf="' + t + '"]')) await page.click('.sh-tab[data-shelf="' + t + '"]'); } await page.click('#grid [data-book-name^="' + pfx + '"]', opt); };
   await page.goto('file://' + path.resolve(__dirname, '../dist/app/index.html'));
   await page.click('#btn-folder-empty');
   await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length > 0);
