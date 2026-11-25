@@ -73,7 +73,7 @@ const scan = (d) => fs.readdirSync(d).filter((n) => /\.fb2$/i.test(n)).map((n) =
   ok(await page.evaluate(() => window.__polka.R.ch) === 1 && /Анна/.test(await page.evaluate(() => window.__polka.R.book.title)), 'клик по стикеру открывает книгу на месте цитаты');
   await page.keyboard.press('Escape'); await page.waitForTimeout(600);
   // клик по карточке открывает книгу
-  await page.click('#grid .hb >> nth=0 >> .hb-t'); await page.waitForFunction(() => window.__polka.R.book && !document.getElementById('reader').hidden);
+  await page.click('#grid .hb >> nth=0 >> .hb-go'); await page.waitForFunction(() => window.__polka.R.book && !document.getElementById('reader').hidden);
   ok(true, 'клик по карточке открывает книгу');
   await page.keyboard.press('Escape'); await page.waitForTimeout(600);
   // переключатель вида на «Читаю сейчас»

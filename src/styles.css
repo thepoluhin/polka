@@ -212,7 +212,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 .sh-tab:hover { background: var(--hover); }
 .sh-tab.on { background: var(--panel-2); }
 .st-name { font-size: 15.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sh-tab.on::before { content: ""; position: absolute; left: 6px; top: 19px; width: 6px; height: 6px; border-radius: 3px; background: var(--accent); }
 .sh-tab small { color: var(--muted); font-size: 13px; margin-left: 10px; }
 .spines { grid-column: 1 / -1; display: flex; align-items: flex-end; gap: 2px; height: 58px; margin-top: 10px; padding-bottom: 3px; border-bottom: 1px solid var(--line); overflow: hidden; }
 .spines i { display: block; flex: none; border-radius: 1.5px; position: relative; opacity: .92; }
@@ -242,7 +241,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 /* «Читаю сейчас» с описанием, когда книг одна-две: сетка из 4 строк (название, автор, текст, кнопка), общая у соседних карточек */
 .grid.hb-list { display: grid; grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; column-gap: 48px; row-gap: 0; }
 .grid.hb-list.n2 { grid-template-columns: 1fr 1fr; }
-.hb { --cw: 250px; display: grid; grid-row: span 4; grid-template-rows: subgrid; grid-template-columns: var(--cw) minmax(0, 1fr); column-gap: 40px; cursor: pointer; min-width: 0; }
+.hb { --cw: 250px; display: grid; grid-row: span 4; grid-template-rows: subgrid; grid-template-columns: var(--cw) minmax(0, 1fr); column-gap: 40px; min-width: 0; }
 .grid.hb-list.n2 .hb { --cw: 160px; column-gap: 28px; }
 .hb-cover { grid-column: 1; grid-row: 1 / 4; align-self: start; }
 .hb-t { grid-column: 2; grid-row: 1; font-family: "Literata", Georgia, serif; font-weight: 700; font-size: 40px; line-height: 1.12; letter-spacing: -.7px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -256,7 +255,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 .hb-go b, .hb-go em { position: relative; font-style: normal; white-space: nowrap; }
 .hb-go b { font-weight: 600; color: var(--accent-ink); }
 .hb-go em { color: var(--muted); font-variant-numeric: tabular-nums; }
-.hb:hover .hb-go { background: var(--accent-soft); }
+.hb-go:hover { background: var(--accent-soft); }
 .hb-k { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
 .hb-q { font-family: "Literata", Georgia, serif; font-size: 16.5px; line-height: 1.6; border-left: 3px solid var(--line); padding-left: 18px; max-width: 720px;
   display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }

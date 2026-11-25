@@ -151,6 +151,62 @@ async function run() {
     assert.equal((notes.get(note).match(/\[!quote\]/g) || []).length, 1);
     assert.match(notes.get(note), /Новая запись/);
     assert.match(notes.get(note), /## Персонажи\nАнна и Борис/);
+
+    const savedPosition = () => page.evaluate((id) => JSON.parse(localStorage.getItem('polka.progress'))[id], id);
+    const visiblePosition = () => page.evaluate(() => ({ ch: window.__polka.R.ch, off: window.__polka.R.off }));
+    const returnPosition = { ch: 2, off: 240 };
+    await page.evaluate(({ ch, off }) => window.__polka.goTo(ch, { off, keepOff: true }), returnPosition);
+    await page.keyboard.press('Escape');
+    const beforePreview = await savedPosition();
+    assert.deepEqual({ ch: beforePreview.ch, off: beforePreview.off }, returnPosition);
+
+    // Открытие записи через вкладку на главной, как при обычном использовании.
+    await page.locator('#lib-tabs [data-view="notebook"]').click();
+    const quoteCard = page.locator('[data-nbi]').first();
+    await quoteCard.click();
+    await page.waitForFunction(() => window.__polka.R.ch === 1 && !window.__polka.R.rendering);
+    const backToLibrary = page.getByRole('button', { name: '← Вернуться на главную' });
+    await backToLibrary.waitFor();
+    await delay(500);
+    assert.equal(await page.locator('.flash-mark').count(), 0);
+    assert.equal(await page.evaluate(() => [...CSS.highlights].some(([name, ranges]) => name.startsWith('quote') && ranges.size > 0)), true);
+    assert.deepEqual(await savedPosition(), beforePreview);
+    await backToLibrary.click();
+    await quoteCard.waitFor();
+    assert.deepEqual(await savedPosition(), beforePreview);
+
+    // Если закрыть книгу прямо на цитате, обычное открытие всё равно ведёт к месту чтения.
+    await quoteCard.click();
+    await page.waitForFunction(() => window.__polka.R.ch === 1 && !window.__polka.R.rendering);
+    await page.keyboard.press('Escape');
+    assert.deepEqual({ ch: (await savedPosition()).ch, off: (await savedPosition()).off }, returnPosition);
+    await page.locator('#lib-tabs [data-view="books"]').click();
+    const readingCard = page.locator('#grid .hb');
+    await readingCard.waitFor();
+    for (const region of ['.hb-t', '.hb-a', '.hb-sec', '.hb-cover']) {
+      await readingCard.locator(region).click();
+      assert.equal(await page.evaluate(() => window.__polka.R.opening || !!window.__polka.R.book), false);
+    }
+    await readingCard.getByRole('button', { name: /^Продолжить/ }).press('Enter');
+    await page.waitForFunction(() => window.__polka.R.book && !window.__polka.R.opening);
+    assert.deepEqual(await visiblePosition(), returnPosition);
+
+    // Из списка цитат в книге возвращаемся к странице, с которой открыли список.
+    await page.keyboard.press('KeyT');
+    await page.locator('#drawer-tabs [data-tab="quotes"]').click();
+    await page.locator('#q-list [data-qid]').first().click();
+    await page.waitForFunction(() => window.__polka.R.ch === 1 && !window.__polka.R.rendering);
+    const backToReading = page.getByRole('button', { name: '← Вернуться к чтению' });
+    await backToReading.waitFor();
+    await delay(500);
+    const previewPosition = await savedPosition();
+    assert.deepEqual({ ch: previewPosition.ch, off: previewPosition.off }, returnPosition);
+    await backToReading.click();
+    await page.waitForFunction(() => !document.getElementById('back-pill'));
+    assert.deepEqual(await visiblePosition(), returnPosition);
+
+    await page.evaluate((id) => window.__polka.openLink('polka://open?book=' + id + '&ch=2&off=240&len=18'), id);
+    assert.ok(await page.locator('.flash-mark').count(), 'An unmarked destination still gets a temporary highlight');
     console.log('Review regressions passed');
   } finally {
     await browser.close();
