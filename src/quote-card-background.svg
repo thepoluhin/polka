@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <defs>
+    <filter id="shadow" x="-30%" y="-30%" width="165%" height="175%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="19"/>
+    </filter>
+    <filter id="edge" x="-10%" y="-10%" width="125%" height="130%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+    <linearGradient id="underFold" x1="0" y1="0" x2=".86" y2=".85" gradientUnits="objectBoundingBox">
+      <stop offset=".44" stop-color="#67573e"/>
+      <stop offset=".68" stop-color="#a89c89"/>
+      <stop offset=".90" stop-color="#d4cbbd"/>
+      <stop offset="1" stop-color="#ede5d9"/>
+    </linearGradient>
+    <linearGradient id="fold" gradientUnits="userSpaceOnUse" x1="658" y1="992" x2="857" y2="1165">
+      <stop stop-color="#ded0b9"/>
+      <stop offset=".43" stop-color="#c6b9a3"/>
+      <stop offset=".80" stop-color="#a99c87"/>
+      <stop offset=".96" stop-color="#9c8e78"/>
+      <stop offset="1" stop-color="#d9ceb9"/>
+    </linearGradient>
+    <path id="sheet" d="M48 44H1036V785C1036 842 1036 874 1002 916C890 1044 751 1207 634 1302Q614 1318 595 1318H48Z"/>
+    <path id="chevron" d="M130.5 156.5L136 160.3 120.3 180.2 135.4 200.1 130.4 203.8 110.7 183.2Q108.4 180.5 110.7 177.6Z"/>
+  </defs>
+  <rect width="1080" height="1350" fill="#f6efe4"/>
+  <path d="M590 1317L914 818Q1022 779 1033 817Q1061 1042 1055 1319Q824 1351 590 1317Z" fill="url(#underFold)" filter="url(#shadow)"/>
+  <use href="#sheet" transform="translate(4 13)" fill="#493921" opacity=".24" filter="url(#shadow)"/>
+  <use href="#sheet" transform="translate(0 2)" fill="#544632" opacity=".17" filter="url(#edge)"/>
+  <use href="#sheet" fill="#f3e8d6"/>
+  <path d="M596 1318C659 1304 666 1182 652 1008Q651 998 663 996C790 984 939 966 993 919Q1028 889 1034 849Q1030 890 1002 916C891 1045 751 1207 634 1302Q615 1318 596 1318Z" fill="url(#fold)"/>
+  <g fill="#ee6039">
+    <use href="#chevron"/><use href="#chevron" transform="translate(20 0)"/>
+    <g transform="translate(1085.4 858) rotate(180)"><use href="#chevron"/><use href="#chevron" transform="translate(20 0)"/></g>
+  </g>
+  <path d="M112 817H972" fill="none" stroke="#d9cbb6" stroke-width="2"/>
+  <rect x="116" y="892" width="254" height="383" rx="15" fill="#584427" opacity=".28" filter="url(#shadow)"/>
+  <g fill="#a38f6f">
+    <rect x="926.7" y="1151.5" width="14.8" height="59.2" rx="4.5"/>
+    <rect x="947.2" y="1145.8" width="14.9" height="64.9" rx="4.5"/>
+    <rect x="969.2" y="1154.5" width="14.6" height="56.2" rx="4.5" transform="rotate(-12 976.5 1182.6)"/>
+    <rect x="920.6" y="1213.4" width="77" height="5.8" rx="2.9"/>
+  </g>
+  <text x="960" y="1282" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="600" fill="#ab9778">Полка</text>
+</svg>

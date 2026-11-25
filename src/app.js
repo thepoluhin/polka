@@ -496,7 +496,7 @@
       showOnly('empty');
       return;
     }
-    $('empty').hidden = true; $('reconnect').hidden = true; $('notebook').hidden = true;
+    showOnly('shelves');
     renderRemember();
     renderShelves();
   }
@@ -2835,7 +2835,7 @@
     if ((ev.ctrlKey || ev.metaKey) && (ev.code === 'Minus' || ev.code === 'NumpadSubtract')) { ev.preventDefault(); fontStep(-1); return; }
     if (ev.key === 'F11') { ev.preventDefault(); toggleFullscreen(); return; }
     if ((ev.ctrlKey || ev.metaKey) && ev.code === 'KeyN') { ev.preventDefault(); togglePad(); return; }
-    if (typing) return;
+    if (typing || (ev.key === ' ' && ev.target.closest('#sel-bar button'))) return;
     switch (ev.key) {
       case 'ArrowDown': ev.preventDefault(); if (fxOn()) fxStep(1); else next(isScroll() ? Math.round(S.size * S.lh * 3) : 0); break;
       case 'ArrowUp': ev.preventDefault(); if (fxOn()) fxStep(-1); else prev(isScroll() ? Math.round(S.size * S.lh * 3) : 0); break;
@@ -2873,7 +2873,11 @@
   //        Выделение текста: перевод · значение · цитата
   // ============================================================
   const selBar = $('sel-bar'), infoCard = $('info-card'), quotePop = $('quote-pop');
+  let quoteRects = null;
+  let menuSelection = null;
   const ZW_RE = /[­​-‏⁠﻿]/g;
+  const normalizeQuoteText = (text) => text.replace(ZW_RE, '').split(/\n+/)
+    .map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
 
   // логическое смещение точки (узел, позиция) от начала главы
   function logAt(container, offset) {
@@ -2888,7 +2892,7 @@
     const rg = sel.getRangeAt(0);
     if (!flow.contains(rg.commonAncestorContainer)) return null;
     const raw = sel.toString().replace(ZW_RE, '');
-    const text = raw.split(/\n+/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+    const text = normalizeQuoteText(raw);
     if (!text) return null;
     let off = logAt(rg.startContainer, rg.startOffset);
     let end = logAt(rg.endContainer, rg.endOffset);
@@ -2911,27 +2915,55 @@
     let top = below ? last.bottom + 12 : first.top - h - 10;
     if (top < 64) top = last.bottom + 12;
     if (top + h > window.innerHeight - 12) top = Math.max(12, first.top - h - 10);
-    el.style.left = left + 'px'; el.style.top = top + 'px';
+    if (el === quotePop || el === selBar) top = Math.max(12, Math.min(top, window.innerHeight - h - 12));
+    if (el === quotePop) el.style.setProperty('--quote-pop-left', left + 'px');
+    else el.style.left = left + 'px';
+    el.style.top = top + 'px';
   }
+  function sameSelection(a, b) { return !!a && !!b && a.off === b.off && a.len === b.len && a.text === b.text; }
   function showSelBar() {
     const s = currentSelection();
-    if (!s) { selBar.hidden = true; return; }
+    if (!s) { hideSelBar(); return; }
     const rects = visibleRects(s.range);
-    if (!rects.length) { selBar.hidden = true; return; }
+    if (!rects.length) { hideSelBar(); return; }
+    if (!sameSelection(s, menuSelection) || R.book !== menuSelection.book || R.ch !== menuSelection.ch) {
+      menuSelection = { off: s.off, len: s.len, text: s.text, book: R.book, ch: R.ch };
+      $('sel-status').textContent = '';
+    }
     placeNear(selBar, rects, false);
   }
-  const hideSelBar = () => { selBar.hidden = true; };
+  function hideSelBar() { selBar.hidden = true; menuSelection = null; $('sel-status').textContent = ''; }
+  function positionQuotePop() {
+    if (!quotePop.hidden && quoteRects) placeNear(quotePop, quoteRects, true);
+  }
+  const quoteResize = new ResizeObserver(positionQuotePop);
+  quoteResize.observe(quotePop);
   flow.addEventListener('mouseup', () => setTimeout(showSelBar, 10));
   document.addEventListener('keyup', (ev) => { if (!reader.hidden && ev.shiftKey) setTimeout(showSelBar, 10); });
   document.addEventListener('selectionchange', () => { const s = window.getSelection(); if (!s || s.isCollapsed) hideSelBar(); });
   viewport.addEventListener('scroll', hideSelBar);
+  window.addEventListener('resize', () => { if (!selBar.hidden) showSelBar(); positionQuotePop(); });
   selBar.addEventListener('mousedown', (ev) => ev.preventDefault()); // не сбрасывать выделение
 
-  selBar.addEventListener('click', (ev) => {
+  selBar.addEventListener('click', async (ev) => {
     const b = ev.target.closest('button'); if (!b) return;
     const s = currentSelection(); if (!s) return;
-    const rects = visibleRects(s.range);
+    if (b.dataset.act === 'share') {
+      const selectedBook = R.book, chapter = R.ch;
+      $('sel-status').textContent = '';
+      const result = await exportQuote(s.text, b);
+      if (selBar.hidden || selectedBook !== R.book || chapter !== R.ch || !sameSelection(s, currentSelection())) return;
+      if (result?.error) {
+        $('sel-status').textContent = result.error;
+        showSelBar();
+      } else if (result?.saved) {
+        hideSelBar();
+        if (result.message) toast(result.message);
+      }
+      return;
+    }
     hideSelBar();
+    const rects = visibleRects(s.range);
     if (b.dataset.act === 'translate') showTranslation(s.text, rects);
     else if (b.dataset.act === 'meaning') showMeaning(s.text, rects);
     else if (b.dataset.act === 'quote') startDraft(s, rects, 'quote');
@@ -3689,22 +3721,94 @@
     LS.set(store, all);
   }
 
+  function originalQuoteText(item) {
+    const chapter = item && R.book.chapters[item.ch];
+    if (!chapter || !Number.isSafeInteger(item.off) || !Number.isSafeInteger(item.len) || item.off < 0 || item.len < 1) return '';
+    // Смещения записи относятся к тексту главы без мягких переносов.
+    const source = document.createElement('template');
+    source.innerHTML = chapter.html;
+    const walker = document.createTreeWalker(source.content, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    const end = item.off + item.len;
+    let startFound = false;
+    let offset = 0;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const next = offset + logLen(node.nodeValue);
+      if (!startFound && item.off < next) {
+        range.setStart(node, logToRaw(node, item.off - offset));
+        startFound = true;
+      }
+      if (startFound && end <= next) {
+        range.setEnd(node, logToRaw(node, end - offset));
+        const blocks = 'address,aside,blockquote,br,dd,div,dl,dt,figcaption,figure,h1,h2,h3,h4,h5,h6,li,ol,p,pre,section,table,td,th,tr,ul';
+        const fragment = range.cloneContents();
+        for (const block of fragment.querySelectorAll(blocks)) {
+          block.before('\n');
+          if (block.localName !== 'br') block.after('\n');
+        }
+        return normalizeQuoteText(fragment.textContent);
+      }
+      offset = next;
+    }
+    return '';
+  }
+
+  let exportingQuote = false;
+  async function exportQuote(text, button) {
+    if (exportingQuote || !R.book) return;
+    exportingQuote = true;
+    button.disabled = true;
+    try {
+      if (!text) throw new Error('Не удалось найти исходный фрагмент в книге. Выделите его заново.');
+      const title = normalizeQuoteText(bookTitle()).replace(/\n/g, ' ') || 'Без названия';
+      const author = R.book.authors.map((name) => normalizeQuoteText(name).replace(/\n/g, ' ')).filter(Boolean).join(', ') || 'Неизвестный автор';
+      const cover = R.book.cover || L.metas[R.id]?.cover;
+      const typeset = text.split('\n').map(typoText).join('\n');
+      const blob = await window.PolkaQuoteCard.render({ text: typeset, title, author, cover });
+      const name = 'Цитата — ' + title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').slice(0, 90).trim() + '.png';
+      if (native?.saveQuotePng) {
+        const saved = await native.saveQuotePng({ name, bytes: new Uint8Array(await blob.arrayBuffer()) });
+        return { saved, message: saved ? 'Карточка сохранена' : '' };
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        return { saved: true };
+      }
+    } catch (err) {
+      return { error: err.message || 'Не удалось сохранить карточку' };
+    } finally {
+      exportingQuote = false;
+      button.disabled = false;
+    }
+  }
+
   // ---------- окошко записи: черновик или сохранённая цитата / заметка ----------
   // pop = { mode: 'draft' | 'saved', kind: 'quote' | 'note', id, s, tags, body0 }
   let pop = null;
   const qpBody = $('qp-body');
+  function quoteNotice(text, error = false) {
+    const notice = $('qp-notice');
+    notice.classList.toggle('is-error', error);
+    notice.textContent = text;
+  }
   function cancelDraft() {
     pop = null;
+    quoteRects = null;
+    quoteNotice('');
     if (CSS.highlights) CSS.highlights.delete('draft');
   }
   const popDirty = () => !!pop && !quotePop.hidden && (pop.mode === 'draft' ? qpBody.value.trim().length > 0 : qpBody.value !== pop.body0);
   function hideQuotePop() { quotePop.hidden = true; $('qp-suggest').hidden = true; $('qp-link-suggest').hidden = true; cancelDraft(); }
   function syncPopButtons() {
     const draft = pop.mode === 'draft';
-    const it = !draft && itemById(pop.kind, pop.id);
     $('qp-save').hidden = !(draft || popDirty());
     $('qp-cancel').hidden = !draft;
     $('qp-delete').hidden = draft;
+    $('qp-export').hidden = pop.kind !== 'quote';
     $('qp-delete').textContent = pop.kind === 'note' ? 'Удалить заметку' : 'Удалить цитату';
   }
   function showBody(on, focus) {
@@ -3717,6 +3821,8 @@
     quotePop.hidden = true; $('qp-suggest').hidden = true; $('qp-link-suggest').hidden = true;
     if (CSS.highlights) CSS.highlights.delete('draft');
     pop = p;
+    quoteRects = rects;
+    quoteNotice('');
     quotePop.dataset.kind = p.kind;
     $('qp-status').textContent = status;
     $('qp-text').textContent = shorten(p.text || '', 240);
@@ -3728,6 +3834,7 @@
     showBody(p.kind === 'note' || !!p.body0, p.mode === 'draft' && p.kind === 'note');
     syncPopButtons();
     placeNear(quotePop, rects, true);
+    $('qp-content').scrollTop = 0;
   }
   function startDraft(s, rects, kind) {
     window.getSelection().removeAllRanges();
@@ -3749,8 +3856,9 @@
   }
   async function commitPop() {
     if (!pop) return;
+    quoteNotice('');
     const body = qpBody.value.replace(/\s+$/, '');
-    if (pop.kind === 'note' && !body.trim()) { qpBody.focus(); toast('Напишите мысль — или нажмите «Отмена»'); return; }
+    if (pop.kind === 'note' && !body.trim()) { qpBody.focus(); quoteNotice('Напишите мысль — или нажмите «Отмена»', true); return; }
     $('qp-save').disabled = true;
     try {
       if (pop.mode === 'draft') {
@@ -3775,7 +3883,7 @@
       }
     } catch (err) {
       console.error(err);
-      toast('Не удалось сохранить: ' + (err.message || err), 5000);
+      quoteNotice('Не удалось сохранить: ' + (err.message || err), true);
       return;
     } finally {
       $('qp-save').disabled = false;
@@ -3812,6 +3920,14 @@
     applyTags(popTags().filter((t) => t !== b.dataset.tag));
   });
   $('qp-addthought').onclick = () => showBody(true, true);
+  $('qp-export').onclick = async (ev) => {
+    if (pop?.kind !== 'quote' || !R.book) return;
+    const openedQuote = pop;
+    const text = pop.mode === 'draft' ? pop.s.text : originalQuoteText(quoteById(pop.id));
+    quoteNotice('');
+    const result = await exportQuote(text, ev.currentTarget);
+    if (pop === openedQuote && !quotePop.hidden && result) quoteNotice(result.error || result.message || '', !!result.error);
+  };
   qpBody.addEventListener('input', () => { autoGrow(qpBody); if (pop) syncPopButtons(); });
   qpBody.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); commitPop(); }
@@ -3928,7 +4044,7 @@
   // не терять написанное случайным кликом мимо
   function confirmLeave() {
     quotePop.classList.remove('shake'); void quotePop.offsetWidth; quotePop.classList.add('shake');
-    toast('Есть несохранённый текст — «Сохранить» или «Отмена»');
+    quoteNotice('Есть несохранённый текст — «Сохранить» или «Отмена»', true);
     return false;
   }
 

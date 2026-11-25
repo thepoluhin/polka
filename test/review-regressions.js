@@ -183,6 +183,14 @@ async function run() {
     await page.locator('#lib-tabs [data-view="books"]').click();
     const readingCard = page.locator('#grid .hb');
     await readingCard.waitFor();
+    for (const [tab, section] of [['pads', '#pads'], ['notebook', '#notebook']]) {
+      await page.locator('#lib-tabs [data-view="' + tab + '"]').click();
+      assert.ok(await page.locator(section).isVisible());
+      assert.ok(await page.locator('#shelves').isHidden());
+      await page.locator('#lib-tabs [data-view="books"]').click();
+      assert.ok(await page.locator(section).isHidden(), tab + ' remains on the Books tab');
+      assert.ok(await readingCard.isVisible());
+    }
     for (const region of ['.hb-t', '.hb-a', '.hb-sec', '.hb-cover']) {
       await readingCard.locator(region).click();
       assert.equal(await page.evaluate(() => window.__polka.R.opening || !!window.__polka.R.book), false);

@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('shelf', {
   bootstrap: call('bootstrap'),
   pickFolder: call('pick-folder'),
   pickFile: call('pick-file'),
+  saveQuotePng: call('save-quote-png'),
   scan: call('scan'),
   read: call('read'),
   bookHash: call('book-hash'),

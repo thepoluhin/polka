@@ -599,17 +599,22 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 .book ::selection { background: rgba(232, 96, 60, .22); }
 
 .sel-bar {
-  position: fixed; z-index: 70; display: flex; gap: 2px; padding: 4px;
+  position: fixed; z-index: 70; padding: 4px;
+  width: max-content; max-width: calc(100vw - 24px);
   background: var(--fg); color: var(--bg); border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .22);
   animation: pop .16s var(--ease);
 }
+.sel-actions { display: flex; flex-wrap: wrap; gap: 2px; }
 .sel-bar button {
   display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px 0 10px;
   border-radius: 9px; font-size: 13.5px; font-weight: 500; color: inherit; opacity: .92;
+  flex: none; white-space: nowrap;
 }
 .sel-bar button:hover { background: rgba(127, 127, 127, .22); opacity: 1; }
 .sel-bar svg { width: 18px; height: 18px; }
+.sel-status:empty { position: absolute; }
+.sel-status:not(:empty) { contain: inline-size; padding: 5px 10px 6px; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
 
 /* ========== Карточка перевода / значения ========== */
 .info-card, .quote-pop {
@@ -641,13 +646,21 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 .info-card .link-btn, .quote-pop .link-btn { padding-left: 0; }
 
 /* ========== Окошко цитаты ========== */
-.quote-pop { padding: 14px 18px 10px; }
-.qp-head { display: flex; align-items: center; justify-content: space-between; }
+.quote-pop {
+  --quote-pop-width: min(440px, calc(100vw - 24px));
+  width: var(--quote-pop-width);
+  left: clamp(12px, var(--quote-pop-left, 12px), calc(100vw - var(--quote-pop-width) - 12px));
+  display: flex; flex-direction: column; max-height: calc(100dvh - 24px);
+  padding: 14px 18px 10px;
+}
+.qp-head { display: flex; flex: none; align-items: center; justify-content: space-between; }
+.qp-content { min-height: 0; overflow-y: auto; overflow-wrap: anywhere; overscroll-behavior: contain; scrollbar-width: thin; padding: 2px; margin: 0 -2px; }
 .qp-status { font-size: 13px; font-weight: 600; color: var(--accent-ink); }
 .qp-close { width: 30px; height: 30px; margin-right: -8px; }
 .qp-close svg { width: 16px; height: 16px; }
 .qp-text { font-family: var(--book-font), Georgia, serif; font-size: 14.5px; line-height: 1.5; color: var(--muted); margin: 6px 0 12px; padding-left: 12px; border-left: 2px solid var(--accent); white-space: pre-line; }
 .qp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.qp-tags .tag-chip { max-width: 100%; min-height: 28px; height: auto; overflow-wrap: anywhere; }
 .tag-chip { height: 28px; padding: 0 11px; border-radius: 14px; font-size: 13px; font-weight: 500; color: var(--tc, var(--muted)); background: color-mix(in srgb, var(--tc, #888) 13%, transparent); transition: background .15s, color .15s, opacity .15s; opacity: .8; }
 .tag-chip:hover { opacity: 1; background: color-mix(in srgb, var(--tc, #888) 22%, transparent); }
 .tag-chip.on { background: var(--tc, var(--accent)); color: #fff; opacity: 1; }
@@ -657,8 +670,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 .qp-add { margin-top: 8px; }
 .qp-add input { width: 100%; height: 34px; border: 0; outline: 0; border-radius: 10px; background: var(--panel-2); color: var(--fg); padding: 0 12px; font: inherit; font-size: 13.5px; }
 .qp-add input:focus { box-shadow: 0 0 0 2px var(--accent-soft); }
-.qp-foot { display: flex; justify-content: space-between; margin-top: 8px; }
+.qp-foot { display: flex; flex: none; flex-wrap: wrap; justify-content: space-between; margin-top: 8px; }
+.qp-notice:not(:empty) { margin-top: 8px; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.qp-notice.is-error { color: color-mix(in srgb, var(--danger) 70%, var(--fg)); }
 .qp-del:hover { color: var(--danger); }
+.qp-foot .qp-export { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-ink); margin-left: auto; white-space: nowrap; }
+.qp-export svg { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.qp-foot .qp-export:not([hidden]) + .qp-save { margin-left: 8px; }
+.qp-export:disabled { opacity: .6; }
 
 /* ========== Настройки: строки ========== */
 .set-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; font-size: 14px; }
@@ -678,6 +697,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
   background: var(--panel); border-radius: 12px; box-shadow: var(--shadow); padding: 5px;
   max-height: 260px; overflow-y: auto; animation: pop .14s var(--ease);
 }
+.qp-content .qp-suggest { position: static; margin-top: 4px; max-height: min(180px, 28dvh); }
 .qs-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; font-size: 13.5px; }
 .qs-item:hover, .qs-item.sel { background: var(--hover); }
 .qs-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
@@ -756,6 +776,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 /* «← Вернуться к чтению» — тоже тост; когда виден обычный тост, пилюля встаёт над ним, а не под него */
 #toast:not([hidden]) ~ #back-pill { bottom: 118px; }
 #back-pill { transition: bottom .2s var(--ease); }
+body:has(#quote-pop:not([hidden]), #sel-bar:not([hidden])) :is(#back-pill, #toast) { display: none; }
 .toast-act { margin-left: 10px; color: var(--accent); font-weight: 650; font-size: 14px; padding: 2px 4px; border-radius: 6px; }
 .toast-act:hover { background: rgba(127,127,127,.18); }
 .toast:has(.toast-act) { pointer-events: auto; }

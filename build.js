@@ -28,7 +28,9 @@ const BUILD_DATE = new Date().toLocaleString('ru-RU', { day: 'numeric', month: '
 // скрипты программы; CSP разрешает выполнять только их (по sha256-отпечаткам) — код из книг не запустится
 // звуки листания — записи настоящей книги из набора Kenney «RPG Audio» (CC0), вшиты в страницу
 const SOUNDS = 'window.POLKA_SOUNDS = ' + JSON.stringify(['page'].map((n) => fs.readFileSync(path.join(__dirname, 'src/sounds', n + '.ogg')).toString('base64'))) + ';';
-const scripts = [fflate, fs.readFileSync(path.join(__dirname, 'build/hyph.js'), 'utf8'), src('parsers.js'), src('diary.js'), SOUNDS, src('app.js').replace('__BUILD_DATE__', BUILD_DATE)]
+const quoteBackground = fs.readFileSync(path.join(__dirname, 'src/quote-card-background.svg')).toString('base64');
+const quoteCard = src('quote-card.js').replace('__QUOTE_BACKGROUND__', quoteBackground);
+const scripts = [fflate, fs.readFileSync(path.join(__dirname, 'build/hyph.js'), 'utf8'), src('parsers.js'), src('diary.js'), SOUNDS, quoteCard, src('app.js').replace('__BUILD_DATE__', BUILD_DATE)]
   // HTML normalizes CRLF before checking inline-script CSP hashes.
   .map((code) => '\n' + code.replace(/\r\n?/g, '\n') + '\n');
 const crypto = require('crypto');

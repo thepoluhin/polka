@@ -191,6 +191,21 @@ handle('pick-file', async () => {
   allowFile(r.filePaths[0]);
   return r.filePaths[0];
 });
+handle('save-quote-png', async (e, { name, bytes } = {}) => {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 33 || bytes.length > 8 * 1024 * 1024) throw new Error('Некорректное изображение');
+  const png = Buffer.from(bytes);
+  if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.toString('ascii', 12, 16) !== 'IHDR' ||
+      png.readUInt32BE(16) !== 1080 || png.readUInt32BE(20) !== 1350) throw new Error('Некорректное изображение');
+  const filename = typeof name === 'string' ? name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').slice(0, 120).trim() : '';
+  const result = await dialog.showSaveDialog(win, {
+    title: 'Сохранить цитату как PNG',
+    defaultPath: path.join(app.getPath('pictures'), filename || 'Цитата.png'),
+    filters: [{ name: 'PNG', extensions: ['png'] }],
+  });
+  if (result.canceled || !result.filePath) return false;
+  await fs.promises.writeFile(result.filePath, png);
+  return true;
+});
 handle('allow-dropped', (e, p) => { if (p && BOOK_RE.test(p)) allowFile(p); });
 handle('scan', (e, dir) => (inRoots(dir) ? scanDir(dir) : { missing: !fs.existsSync(String(dir || '')), files: [], denied: true }));
 handle('read', (e, p) => { if (!canRead(p)) throw new Error('нет доступа к файлу'); return fs.promises.readFile(p); });

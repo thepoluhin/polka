@@ -248,11 +248,15 @@
   </div>
 
   <!-- Панель выделения -->
-  <div class="sel-bar" id="sel-bar" hidden>
+  <div class="sel-bar" id="sel-bar" role="group" aria-label="Действия с выделенным текстом" hidden>
+    <div class="sel-actions">
     <button data-act="translate"><svg viewBox="0 0 24 24"><path d="M4 5h9M8.5 3v2M6 5c1 3.5 3.5 6 7 7.5M11 5c-1 3.5-3.5 6.5-7 8"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg>Перевод</button>
     <button data-act="meaning"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/></svg>Значение</button>
     <button data-act="quote"><svg viewBox="0 0 24 24"><path d="M7 7h4v4c0 3-1.5 5-4 6M14 7h4v4c0 3-1.5 5-4 6"/></svg>Цитата</button>
     <button data-act="note"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>Заметка</button>
+    <button data-act="share" title="Сохранить цитату как PNG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Поделиться</button>
+    </div>
+    <div class="sel-status" id="sel-status" role="status"></div>
   </div>
 
   <!-- Карточка перевода / значения -->
@@ -266,20 +270,24 @@
       <span class="qp-status" id="qp-status">Цитата сохранена</span>
       <button class="icon-btn qp-close" id="qp-close" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
-    <div class="qp-text" id="qp-text"></div>
-    <div class="ta-wrap qp-body-wrap" id="qp-body-wrap" hidden>
-      <textarea id="qp-body" rows="3"></textarea>
-      <div class="qp-suggest link-suggest" id="qp-link-suggest" hidden></div>
+    <div class="qp-content" id="qp-content">
+      <div class="qp-text" id="qp-text"></div>
+      <div class="ta-wrap qp-body-wrap" id="qp-body-wrap" hidden>
+        <textarea id="qp-body" rows="3"></textarea>
+        <div class="qp-suggest link-suggest" id="qp-link-suggest" hidden></div>
+      </div>
+      <button class="link-btn qp-addthought" id="qp-addthought">+ добавить мысль</button>
+      <div class="qp-tags" id="qp-tags"></div>
+      <div class="qp-add">
+        <input id="qp-tag-input" type="text" placeholder="+ тег" autocomplete="off" maxlength="40">
+        <div class="qp-suggest" id="qp-suggest" hidden></div>
+      </div>
     </div>
-    <button class="link-btn qp-addthought" id="qp-addthought">+ добавить мысль</button>
-    <div class="qp-tags" id="qp-tags"></div>
-    <div class="qp-add">
-      <input id="qp-tag-input" type="text" placeholder="+ тег" autocomplete="off" maxlength="40">
-      <div class="qp-suggest" id="qp-suggest" hidden></div>
-    </div>
+    <div class="qp-notice" id="qp-notice" role="status"></div>
     <div class="qp-foot">
       <button class="link-btn qp-del" id="qp-delete">Удалить цитату</button>
       <button class="link-btn" id="qp-cancel">Отмена</button>
+      <button class="link-btn qp-export" id="qp-export" title="Сохранить цитату как PNG" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Поделиться</button>
       <button class="qp-save" id="qp-save">Сохранить</button>
     </div>
   </div>
