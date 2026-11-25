@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('shelf', {
   setFullscreen: (on) => ipcRenderer.invoke('fullscreen', !!on),
   onFullscreen: (cb) => ipcRenderer.on('fs-changed', (e, on) => cb(on)),
   setTheme: call('set-theme'),
+  setReadingKeepAwake: call('reading-keep-awake'),
   onOpenFile: (cb) => ipcRenderer.on('open-file', (e, p) => cb(p)),
   version: call('version'),
   guideStat: call('guide-stat'),

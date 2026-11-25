@@ -94,7 +94,7 @@
   ];
   const S = Object.assign({
     theme: 'light', font: 'Literata', size: 20, lh: 1.55, width: 680, cols: 'auto',
-    justify: true, hyph: true, anim: true, sort: 'recent', focus: 'off', typo: true, remember: true,
+    justify: true, hyph: true, anim: true, sort: 'recent', focus: 'off', typo: true, remember: true, keepAwake: false,
   }, LS.get('settings', {}));
   // испорченные настройки: неизвестная тема и нечисловые размеры — значения по умолчанию
   if (!THEMES.some((t) => t.id === S.theme)) S.theme = 'light';
@@ -838,6 +838,7 @@
       if (!L.metas[e.id]) ensureMeta(e);
       const pos = progress()[e.id];
       lib.hidden = true; reader.hidden = false;
+      syncReadingPower();
       document.title = (book.title || e.name) + ' — Полка';
       $('r-book-title').textContent = book.title || e.name;
       $('r-book-author').textContent = book.authors.join(', ');
@@ -881,6 +882,7 @@
     }
     for (const u of R.book.urls) URL.revokeObjectURL(u);
     R.book = null; R.nodes = null; R.texts = null; R.noteCache = null; R.normCache = null;
+    syncReadingPower();
     flow.innerHTML = '';
     R.previewReturn = null;
     dropBackPill();
@@ -2387,15 +2389,20 @@
     document.querySelectorAll('#settings .set-pane').forEach((p) => { p.hidden = p.dataset.pane !== S.setTab; });
     document.querySelectorAll('#set-flip button').forEach((b) => b.classList.toggle('active', b.dataset.v === S.flip));
     $('set-typo').checked = S.typo; $('set-remember').checked = S.remember !== false; $('set-guide').checked = !LS.get('guideHidden', false);
+    $('set-keep-awake').checked = S.keepAwake === true;
     document.querySelectorAll('#set-focus button').forEach((b) => b.classList.toggle('active', b.dataset.v === S.focus));
   }
   const relayoutSoon = debounce(async () => {
     if (document.fonts && document.fonts.load) await document.fonts.load(S.size + 'px "' + S.font + '"').catch(() => {});
     await relayout();
   }, 60);
+  function syncReadingPower() {
+    native?.setReadingKeepAwake?.(S.keepAwake === true && !!R.book).catch(console.warn);
+  }
   function changeSetting(k, v) {
     if (['font', 'size', 'lh', 'width', 'cols', 'justify', 'hyph', 'focus', 'typo'].includes(k)) dropClones();
     S[k] = v; saveSettings(); applyTheme(); syncSettings();
+    if (k === 'keepAwake') syncReadingPower();
     if (k === 'focus') { applyFocus(); if (fxOn()) fxPick(); }
     if (k === 'theme' && S.focus === 'sent') paintSent();
     if (k === 'typo' && R.book && !R.rendering) { renderChapter(R.ch, { off: R.off, keepOff: true }); return; }
@@ -2664,6 +2671,8 @@
   $('set-justify').onchange = (e) => changeSetting('justify', e.target.checked);
   $('set-hyph').onchange = (e) => changeSetting('hyph', e.target.checked);
   $('set-typo').onchange = (e) => changeSetting('typo', e.target.checked);
+  $('set-keep-awake').closest('label').hidden = !native?.setReadingKeepAwake;
+  $('set-keep-awake').onchange = (e) => changeSetting('keepAwake', e.target.checked);
   $('set-remember').onchange = (e) => changeSetting('remember', e.target.checked);
   $('set-guide').onchange = (e) => setGuide(e.target.checked);
   document.addEventListener('click', (ev) => {

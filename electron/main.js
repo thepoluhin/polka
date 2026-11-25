@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, screen, powerSaveBlocker } = require('electron');
 
 // без стандартного меню Electron: его горячие клавиши (Ctrl+R, Ctrl+=, F11…) перехватывали наши
 Menu.setApplicationMenu(null);
@@ -10,6 +10,22 @@ const BOOK_RE = /\.(fb2|epub|fb2\.zip)$/i;
 const DEBUG = !!process.env.POLKA_DEBUG;
 let win = null;
 let quitting = false;
+let keepAwakeForReading = false;
+let readingPowerBlock = null;
+
+function syncReadingPower() {
+  const active = keepAwakeForReading && win && win.isVisible() && win.isFocused() && !win.isMinimized();
+  if (active && readingPowerBlock === null) {
+    readingPowerBlock = powerSaveBlocker.start('prevent-display-sleep');
+  } else if (!active && readingPowerBlock !== null) {
+    powerSaveBlocker.stop(readingPowerBlock);
+    readingPowerBlock = null;
+  }
+}
+function resetReadingPower() {
+  keepAwakeForReading = false;
+  syncReadingPower();
+}
 
 // путь из командной строки — относительно папки, откуда запущена программа (у второй копии — своя папка)
 function fileFromArgs(argv, cwd) {
@@ -137,7 +153,10 @@ function createWindow() {
     try { writeJsonAtomic(stateFile(), Object.assign(loadState(), win.getNormalBounds(), { maximized: win.isMaximized() })); } catch (e) { /* ок */ }
   };
   win.on('close', save);
-  win.on('closed', () => { win = null; });
+  for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) win.on(event, syncReadingPower);
+  win.on('closed', () => { win = null; resetReadingPower(); });
+  win.webContents.on('render-process-gone', resetReadingPower);
+  win.webContents.on('did-start-loading', resetReadingPower);
   win.on('enter-full-screen', () => win.webContents.send('fs-changed', true));
   win.on('leave-full-screen', () => win.webContents.send('fs-changed', false));
   // никаких новых окон и переходов: внешние ссылки — в браузере, всё остальное запрещено
@@ -358,6 +377,10 @@ handle('obsidian-graph', async (e, dir, done) => {
   return { vault: d, stuck };
 });
 handle('fullscreen', (e, on) => { if (!win) return false; win.setFullScreen(on === undefined ? !win.isFullScreen() : !!on); return win.isFullScreen(); });
+handle('reading-keep-awake', (e, on) => {
+  keepAwakeForReading = on === true;
+  syncReadingPower();
+});
 handle('set-theme', (e, bg) => {
   if (!win || !/^#[0-9a-f]{6}$/i.test(String(bg))) return;
   win.setBackgroundColor(bg);

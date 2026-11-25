@@ -534,6 +534,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 0; 
 .set-toggles { margin-top: 16px; display: flex; flex-direction: column; gap: 4px; }
 .toggle { display: flex; align-items: center; gap: 12px; font-size: 14px; cursor: pointer; padding: 6px 2px; }
 .toggle input { display: none; }
+.keep-awake-toggle { position: relative; margin-top: 12px; }
+.keep-awake-toggle input { display: block; position: absolute; width: 1px; height: 1px; opacity: 0; }
 .toggle span { width: 36px; height: 21px; border-radius: 11px; background: var(--faint); position: relative; transition: background .2s; flex: none; }
 .toggle span::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s var(--ease); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
 .toggle input:checked + span { background: var(--accent); }
