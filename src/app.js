@@ -626,7 +626,7 @@
   function openSticker(id, itemId) {
     const it = [].concat((LS.get('quotes', {}) || {})[id] || [], (LS.get('notes', {}) || {})[id] || []).find((x) => x.id === itemId);
     hideStkTip(true);
-    if (it) openLink(polkaLinkFor(id, it));
+    if (it) openLibraryItem(id, it);
   }
 
   // большая карточка книги, которую читаете (1–2 книги в «Читаю сейчас», вид «с описанием»).
@@ -640,7 +640,7 @@
       '<div class="hb-a">' + esc(b.author || ' ') + (p.chap ? '<span class="hb-ch"> · ' + esc(chapLabel(p.chap)) + '</span>' : '') + '</div>' +
       '<div class="hb-sec">' + (bl ? '<div class="hb-k">' + bl.kind + '</div><div class="' + (bl.serif ? 'hb-q' : 'hb-anno') + '"' + (bl.color ? ' style="border-color:' + bl.color + '"' : '') + '>' + esc(bl.text) + '</div>' +
         (bl.meta ? '<div class="hb-meta">' + esc(bl.meta) + '</div>' : '') + tags : '') + '</div>' +
-      '<span class="hb-go" title="Продолжить чтение"><i style="width:' + Math.max(pct, 2) + '%"></i><b>Продолжить</b><em>' + pct + '%</em></span>' +
+      '<button type="button" class="hb-go" title="Продолжить чтение"><i style="width:' + Math.max(pct, 2) + '%"></i><b>Продолжить</b><em>' + pct + '%</em></button>' +
       '</div>';
   }
 
@@ -817,7 +817,7 @@
     book: null, entry: null, id: null,
     ch: 0, page: 0, pages: 1, off: 0,
     geo: null, nodes: null, domLen: 1, rendering: false,
-    history: [],
+    history: [], previewReturn: null,
   };
   const flow = $('flow'), viewport = $('viewport'), stage = $('stage'), reader = $('reader');
 
@@ -845,7 +845,11 @@
       buildToc();
       soundWarm();
       if (document.fonts && document.fonts.load) await document.fonts.load(S.size + 'px "' + S.font + '"').catch(() => {});
-      if (at && at.ch < book.chapters.length) await renderChapter(at.ch, { off: at.off || 0, keepOff: true });
+      if (at && at.ch < book.chapters.length) {
+        const resume = pos && pos.ch < book.chapters.length ? pos : { ch: 0, off: 0 };
+        startLinkedPreview(at.libraryReturn || { ch: resume.ch, off: resume.off });
+        await renderChapter(at.ch, { off: at.off || 0, keepOff: true });
+      }
       else {
         const ch = pos && pos.ch < book.chapters.length ? pos.ch : 0;
         await renderChapter(ch, pos ? { off: pos.off || 0, keepOff: true } : { page: 0 });
@@ -865,11 +869,12 @@
 
   function closeBook(silent) {
     if (!R.book) return;
+    const libraryScroll = R.previewReturn?.scrollTop;
     if (typeof PADE !== 'undefined' && PADE) { PADE.save(); PADE = null; $('pad').hidden = true; reader.classList.remove('pad-on'); $('btn-pad').classList.remove('active'); }
     finishFlip(); autoStop(); if (R.endShown) hideBookEnd(true);
     savePos.flush && savePos.flush();
     // из книги возвращаемся туда, где она теперь стоит: начатая — в «Читаю сейчас»
-    if (!silent && !shelves().some((x) => x.id === SH.tab)) {
+    if (!silent && libraryScroll == null && !shelves().some((x) => x.id === SH.tab)) {
       const qs = shelves().find((x) => x.quiet && x.books.includes(R.id)); // книга с «тихой» полки — обратно на неё
       if (qs) { SH.tab = qs.id; SH.page = 0; }
       else if (bookStatus(progress()[R.id]) === 'reading' && SH.tab !== 'reading') { SH.tab = 'reading'; SH.page = 0; }
@@ -877,6 +882,7 @@
     for (const u of R.book.urls) URL.revokeObjectURL(u);
     R.book = null; R.nodes = null; R.texts = null; R.noteCache = null; R.normCache = null;
     flow.innerHTML = '';
+    R.previewReturn = null;
     dropBackPill();
     if ($('pins')) $('pins').innerHTML = '';
     if (CSS.highlights) CSS.highlights.clear();
@@ -885,6 +891,7 @@
       document.title = 'Полка';
       closePanels();
       renderLibrary();
+      if (libraryScroll != null) $('lib-main').scrollTop = libraryScroll;
       quietRescan(60000);
     }
   }
@@ -1412,7 +1419,7 @@
     let t = null;
     const write = () => {
       t = null;
-      if (!R.book) return;
+      if (!R.book || R.previewReturn) return;
       const all = progress();
       const was = all[R.id] || {}, pct = R.endShown ? 1 : currentPct();
       // «прочитано» держится, пока книгу не начали заново
@@ -1839,8 +1846,10 @@
     el.hidden = false; R.endShown = true;
     reader.classList.add('at-end');
     if (f) f.play(); else { el.classList.remove('be-in'); void el.offsetWidth; el.classList.add('be-in'); if (turn) turnSound('slide', 0.44); }
-    // книга прочитана: место — самый конец
-    const all = progress(); all[R.id] = Object.assign({}, all[R.id], { ch: R.ch, off: R.off, pct: 1, t: Date.now(), done: Date.now() }); LS.set('progress', all);
+    if (!R.previewReturn) {
+      // книга прочитана: место — самый конец
+      const all = progress(); all[R.id] = Object.assign({}, all[R.id], { ch: R.ch, off: R.off, pct: 1, t: Date.now(), done: Date.now() }); LS.set('progress', all);
+    }
   }
   function hideBookEnd(quiet) {
     if (!R.endShown) return;
@@ -2042,22 +2051,54 @@
     R.history.push({ ch: R.ch, off: R.off });
     showBackPill();
   }
+  function startLinkedPreview(returnTo) {
+    if (R.previewReturn) return;
+    savePos.flush();
+    R.previewReturn = returnTo;
+    showBackPill();
+  }
+  async function previewInBook(ch, off) {
+    if (ch < 0 || ch >= R.book.chapters.length) return;
+    startLinkedPreview({ ch: R.ch, off: R.off });
+    dropBackPill();
+    closePanels();
+    if (R.endShown) hideBookEnd(true);
+    await goTo(ch, { off, keepOff: true });
+  }
   function showBackPill() {
     let pill = $('back-pill');
     if (!pill) {
       pill = document.createElement('button');
       pill.id = 'back-pill'; pill.className = 'toast';
       pill.style.cursor = 'pointer';
-      pill.textContent = '← Вернуться к чтению';
       pill.onclick = async () => {
-        const h = R.history.pop();
-        pill.remove();
-        if (h) await goTo(h.ch, { off: h.off, keepOff: true });
+        const h = R.history.pop() || R.previewReturn;
+        if (!h) return;
+        if (h.scrollTop != null) { closeBook(false); return; }
+        pill.disabled = true;
+        try {
+          if (R.endShown) hideBookEnd(true);
+          await goTo(h.ch, { off: h.off, keepOff: true });
+          if (h === R.previewReturn) {
+            R.previewReturn = null;
+            savePos();
+          }
+          if (!R.history.length && !R.previewReturn) pill.remove();
+          else if (pill.isConnected) showBackPill();
+        } finally {
+          pill.disabled = false;
+        }
       };
       document.body.appendChild(pill);
     }
+    pill.textContent = R.previewReturn && R.history.length ? '← Назад'
+      : R.previewReturn?.scrollTop != null ? '← Вернуться на главную' : '← Вернуться к чтению';
   }
-  function dropBackPill() { const p = $('back-pill'); if (p) p.remove(); R.history = []; }
+  function dropBackPill() {
+    R.history = [];
+    if (R.previewReturn) showBackPill();
+    else $('back-pill')?.remove();
+  }
 
   // ---------- оглавление ----------
   function buildToc() {
@@ -2510,7 +2551,7 @@
     const tab = ev.target.closest('button.sh-tab');
     if (tab) { SH.tab = tab.dataset.shelf; SH.page = 0; SH.edit = null; renderShelves(); return; }
     const card = ev.target.closest('[data-id]');
-    if (!card) return;
+    if (!card || (card.matches('.hb') && !ev.target.closest('.hb-go'))) return;
     const e = L.entries.find((x) => x.id === card.dataset.id);
     if (e) openEntry(e);
   };
@@ -4030,7 +4071,7 @@
     if (del) { const q = quoteById(del.dataset.qdel); if (q) deleteQuote(q); return; }
     const b = ev.target.closest('[data-qid]'); if (!b) return;
     const q = quoteById(b.dataset.qid); if (!q) return;
-    closePanels(); goTo(q.ch, { off: q.off, keepOff: true });
+    previewInBook(q.ch, q.off);
   });
 
   // вкладка «Заметки»: мысли о книге + заметки по ходу чтения (и мысли к цитатам)
@@ -4072,7 +4113,7 @@
     if (del) { const n = noteById(del.dataset.ndel); if (n) deleteItem('note', n); return; }
     const b = ev.target.closest('[data-nid]'); if (!b) return;
     const it = itemById(b.dataset.nk, b.dataset.nid); if (!it) return;
-    closePanels(); goTo(it.ch, { off: it.off, keepOff: true });
+    previewInBook(it.ch, it.off);
   });
 
   // ---------- управление тегами ----------
@@ -4190,7 +4231,7 @@
   });
 
   // ссылки polka://open?book=…&ch=…&off=…
-  // мягкая «вспышка» поверх места, куда привела ссылка
+  // Вспышка помогает найти место по ссылке без сохранённой отметки.
   function flashAt(off, len) {
     let rects = [];
     try { const vr = viewport.getBoundingClientRect(); rects = Array.from(rangeAt(off, Math.max(1, len)).getClientRects()).filter((r) => r.width > 1 && r.left >= vr.left - 2 && r.right <= vr.right + 2 && r.top >= vr.top - 2 && r.bottom <= vr.bottom + 2); } catch (e) { /* ок */ }
@@ -4203,7 +4244,10 @@
       setTimeout(() => d.remove(), 2600);
     }
   }
-  async function openLink(url) {
+  function openLibraryItem(id, it) {
+    return openLink(polkaLinkFor(id, it), { scrollTop: $('lib-main').scrollTop });
+  }
+  async function openLink(url, libraryReturn) {
     const m = String(url).match(/[?&]book=([^&]+)/);
     if (!m) { toast('Ссылка повреждена'); return; }
     let id;
@@ -4213,15 +4257,19 @@
     for (let i = 0; i < 100 && (L.scanning || !L.entries.length); i++) await sleep(100);
     const e = L.entries.find((x) => bookKeyMatches(id, x.id));
     if (!e) { toast('Книга из ссылки не найдена в папке'); return; }
-    const qid = (String(url).match(/[?&][qn]=([0-9a-z]+)/) || [])[1];
     const wasOpen = R.book && R.id === e.id && !reader.hidden;
-    if (wasOpen) { if (ch != null && ch < R.book.chapters.length) await goTo(ch, { off: off || 0, keepOff: true }, true); }
-    else await openEntry(e, ch != null ? { ch, off: off || 0 } : null);
-    if (ch != null && R.book && ch >= R.book.chapters.length) { toast(wasOpen ? 'Место из ссылки не найдено в книге' : 'Место из ссылки не найдено — книга открыта там, где вы остановились', 4000); return; }
+    if (wasOpen) {
+      if (ch != null) await previewInBook(ch, off || 0);
+    } else await openEntry(e, ch != null ? { ch, off: off || 0, libraryReturn } : null);
+    if (!R.book || R.id !== e.id) return;
+    if (ch != null && ch >= R.book.chapters.length) { toast(wasOpen ? 'Место из ссылки не найдено в книге' : 'Место из ссылки не найдено — книга открыта там, где вы остановились', 4000); return; }
     if (ch != null) {
-      const q = qid && allItems().find((x) => x.id === qid);
       await sleep(250);
-      flashAt(q ? q.off : off || 0, q ? q.len : 40);
+      if (R.id !== e.id || R.ch !== ch || !R.previewReturn || reader.hidden) return;
+      const target = off || 0;
+      if (window.Highlight && CSS.highlights &&
+          allItems().some((it) => it.ch === ch && it.off <= target && target < it.off + it.len)) return;
+      flashAt(target, num('len') || 40);
     }
   }
 
@@ -4495,7 +4543,7 @@
     const rm = ev.target.closest('[data-rm]');
     if (rm) {
       const it = R.remItem;
-      if (rm.dataset.rm === 'open' && it) openLink(polkaLinkFor(it.book, it));
+      if (rm.dataset.rm === 'open' && it) openLibraryItem(it.book, it);
       else if (rm.dataset.rm === 'more') renderRemember(true);
       else if (rm.dataset.rm === 'off') {
         changeSetting('remember', false);
@@ -4504,7 +4552,7 @@
       return true;
     }
     const card = ev.target.closest('[data-nbi]');
-    if (card) { const it = NB.cards[+card.dataset.nbi]; if (it) openLink(polkaLinkFor(it.book, it)); return true; }
+    if (card) { const it = NB.cards[+card.dataset.nbi]; if (it) openLibraryItem(it.book, it); return true; }
     const ob = ev.target.closest('[data-nb-openbook]');
     if (ob) {
       const e = L.entries.find((x) => x.id === ob.dataset.nbOpenbook);
