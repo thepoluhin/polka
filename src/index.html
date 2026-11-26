@@ -189,6 +189,18 @@
     <div class="set-tabs" id="set-tabs">
       <button data-tab="text"><svg viewBox="0 0 24 24"><path d="M5 19L11 5h2l6 14M7.5 14h9"/></svg>Текст</button>
       <button data-tab="read"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v16H6.5A2.5 2.5 0 0 0 4 21.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H12v16h5.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg>Чтение</button>
+      <button data-tab="pad" hidden><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></svg>Блокнот</button>
+    </div>
+    <div class="set-pane" data-pane="pad" hidden>
+      <div class="set-label" id="pad-font-label">Шрифт блокнота</div>
+      <div class="segmented full pad-options" role="group" aria-labelledby="pad-font-label"><button data-pad-setting="font" data-v="book">Как в книге</button><button data-pad-setting="font" data-v="hand">Рукописный</button></div>
+      <div class="set-label" id="pad-paper-label">Цвет бумаги</div>
+      <div class="pad-colors" role="group" aria-labelledby="pad-paper-label"></div>
+      <div class="set-label" id="pad-rule-label">Разметка листа</div>
+      <div class="segmented full pad-options" role="group" aria-labelledby="pad-rule-label"><button data-pad-setting="rule" data-v="plain">Без разметки</button><button data-pad-setting="rule" data-v="lines">Линейка</button><button data-pad-setting="rule" data-v="dots">Точки</button></div>
+      <div class="set-label" id="pad-nav-label">Навигация</div>
+      <div class="segmented full pad-options" role="group" aria-labelledby="pad-nav-label"><button data-pad-setting="navigation" data-v="pages">Листание</button><button data-pad-setting="navigation" data-v="scroll">Прокрутка</button></div>
+      <div class="set-toggles"><label class="toggle pad-number-toggle"><input type="checkbox" id="set-pad-numbers"><span></span>Номера листов</label></div>
     </div>
     <div class="set-pane" data-pane="text">
       <div class="set-label">Шрифт</div>
@@ -303,6 +315,7 @@
 
 <!-- Настройки программы (на главной) -->
 <div class="popover ctx-menu" id="ctx-menu" hidden></div>
+<div class="popover ctx-menu" id="pad-context" hidden><button data-copy>Копировать</button><button data-paste>Вставить</button></div>
 <div class="stk-tip" id="stk-tip" hidden></div>
 <div class="popover lib-settings" id="lib-settings" hidden>
   <div class="ls-title">Настройки</div>

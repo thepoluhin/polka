@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('shelf', {
   setReadingKeepAwake: call('reading-keep-awake'),
   onOpenFile: (cb) => ipcRenderer.on('open-file', (e, p) => cb(p)),
   version: call('version'),
+  padClipboardRead: call('pad-clipboard-read'),
+  padClipboardWrite: call('pad-clipboard-write'),
   guideStat: call('guide-stat'),
   guideRead: call('guide-read'),
   initialUrl: call('initial-url'),

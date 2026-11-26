@@ -1106,8 +1106,36 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; margin: 0 2px; b
 .pad-folio button { width: 22px; height: 22px; border-radius: 6px; color: inherit; font-size: 15px; line-height: 1; }
 .pad-folio button:hover:not(:disabled) { background: rgba(0,0,0,.06); color: var(--pad-ink); }
 .pad-folio button:disabled { opacity: 0; pointer-events: none; }
+.pad-sheet[data-pad-font] { background-color: var(--pad-custom-paper); --pad-text-font: var(--book-font), Georgia, serif; --pad-line: 1.8em; }
+.pad-sheet[data-pad-font="hand"] { --pad-text-font: "Segoe Print", "Segoe Script", cursive; }
+.pad-sheet[data-pad-rule="lines"] { background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--pad-line) - 1px), color-mix(in srgb, var(--pad-ink) 15%, transparent) calc(var(--pad-line) - 1px) var(--pad-line)); }
+.pad-sheet[data-pad-rule="dots"] { background-image: radial-gradient(circle, color-mix(in srgb, var(--pad-ink) 32%, transparent) .65px, transparent 1px); background-size: 16px 16px; }
+.pad-sheet[data-pad-rule] { font-size: var(--pad-text-size, 15px); }
+.pad-sheet[data-pad-font] .pad-ta, .pad-rich-text { font-family: var(--pad-text-font); font-size: var(--pad-text-size); line-height: var(--pad-line); }
+.pad-rich { position: absolute; inset: 34px 21px 54px 34px; padding-right: 13px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.pad-rich-page + .pad-rich-page { margin-top: 24px; padding-top: 23px; border-top: 1px solid color-mix(in srgb, var(--pad-ink) 16%, transparent); }
+.pad-rich-text { display: block; width: 100%; min-height: var(--pad-line); resize: none; overflow: hidden; padding: 0; border: 0; outline: 0; background: none; color: inherit; caret-color: var(--accent); }
+.pad-image { position: relative; margin: 10px 0; max-width: 100%; }
+.pad-image img { display: block; width: 100%; height: auto; border-radius: 6px; }
+.pad-image.selected { outline: 1px solid var(--accent); border-radius: 6px; }
+.pad-resize { visibility: hidden; position: absolute; right: -4px; bottom: -4px; width: 12px; height: 12px; border: 1px solid var(--pad-custom-paper); border-radius: 3px; background: var(--accent); cursor: nwse-resize; touch-action: none; }
+.pad-image.selected .pad-resize, .pad-image:focus-within .pad-resize { visibility: visible; }
+.pad-source { color: var(--pad-ink); font-size: 13px; text-decoration: underline; }
+.ic-pad { margin-top: 10px; }
+#pad-context button:disabled { opacity: .5; cursor: default; }
+#settings.pad-aligned { --pad-panel-width: 360px; width: var(--pad-panel-width); right: 56px; left: auto; top: 62px; }
+#set-tabs button[hidden] { display: none; }
+.pad-options button { padding-inline: 5px; white-space: nowrap; flex: 1 1 0; min-width: 0; }
+.pad-colors { display: flex; gap: 10px; padding: 3px 2px; }
+.pad-colors button { width: 30px; height: 30px; border-radius: 50%; background: var(--swatch); color: #24201a; }
+.pad-colors button.active { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pad-colors button.active::after { content: '✓'; }
+.pad-number-toggle { position: relative; }
+.pad-number-toggle input { display: block; position: absolute; width: 36px; height: 22px; opacity: 0; }
+.pad-number-toggle input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 4px; }
 #btn-pad.active { color: var(--accent); opacity: 1; }
 @media (max-width: 1100px) { #reader.pad-on .stage, #reader.pad-on .r-bottom { right: 330px; } .pad { width: 290px; right: 24px; } }
+@media (max-width: 1100px) { #settings.pad-aligned { --pad-panel-width: 290px; right: 24px; } .pad-options button { font-size: 12px; } }
 /* раздел «Блокноты» на главной */
 .pads { margin-top: 22px; }
 .pads-head h2 { font-size: 26px; font-weight: 700; letter-spacing: -.5px; margin: 0; }
