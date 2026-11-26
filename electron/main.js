@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, screen, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, screen, powerSaveBlocker, clipboard, nativeImage } = require('electron');
 
 // без стандартного меню Electron: его горячие клавиши (Ctrl+R, Ctrl+=, F11…) перехватывали наши
 Menu.setApplicationMenu(null);
@@ -255,6 +255,20 @@ handle('stat', async (e, p) => {
 });
 handle('initial-file', () => { const f = pendingFile; pendingFile = null; if (f) allowFile(f); return f; });
 handle('version', () => app.getVersion());
+handle('pad-clipboard-read', () => {
+  const image = clipboard.readImage();
+  if (image.isEmpty()) return { text: clipboard.readText() };
+  const { width, height } = image.getSize();
+  const longest = Math.max(width, height);
+  const scaled = longest > 1600 ? image.resize(width >= height ? { width: 1600 } : { height: 1600 }) : image;
+  return { image: scaled.toPNG() };
+});
+handle('pad-clipboard-write', (e, { text, image } = {}) => {
+  if (typeof text === 'string') { clipboard.writeText(text); return; }
+  if (!(image instanceof Uint8Array) || image.length > 12 * 1024 * 1024) return;
+  const data = nativeImage.createFromBuffer(Buffer.from(image));
+  if (!data.isEmpty()) clipboard.writeImage(data);
+});
 // встроенная книга-путеводитель (лежит рядом с программой)
 const guideFile = () => path.join(__dirname, 'guide.fb2');
 handle('guide-stat', async () => { try { const s = await fs.promises.stat(guideFile()); return { size: s.size }; } catch (err) { return null; } });

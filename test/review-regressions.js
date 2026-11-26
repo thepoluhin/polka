@@ -55,6 +55,9 @@ async function run() {
         read: async (p) => Uint8Array.from(atob(await window.readBook(p)), (b) => b.charCodeAt(0)),
         initialFile: async () => null,
         onOpenFile() {}, setTheme() {},
+        netGet: async (url) => url.startsWith('https://translate.googleapis.com/')
+          ? { ok: true, text: JSON.stringify({ src: 'en', sentences: [{ trans: 'Проверенный перевод' }] }) }
+          : { ok: false, status: 503 },
         diaryDir: async () => ({ dir: '/diary' }),
         quotesDefaultDir: async () => '/diary',
         noteResolve: async (opts) => resolve(opts),
@@ -291,6 +294,80 @@ async function run() {
       return editor.pages;
     });
     assert.deepEqual(tinyPad, ['Первый лист', 'Текст']);
+    await page.evaluate(() => window.__pad.close());
+
+    await page.evaluate(async () => {
+      await window.__pad.open();
+      document.querySelector('#btn-settings').click();
+    });
+    await page.locator('#set-tabs [data-tab="pad"]').click();
+    await page.evaluate(() => Promise.all(['#settings', '#pad-sheet'].flatMap((selector) =>
+      document.querySelector(selector).getAnimations().map((animation) => animation.finished))));
+    assert.deepEqual(await page.evaluate(() => {
+      const pane = document.querySelector('#settings').getBoundingClientRect();
+      const sheet = document.querySelector('#pad-sheet').getBoundingClientRect();
+      return [Math.round(Math.abs(pane.left - sheet.left)), Math.round(Math.abs(pane.right - sheet.right))];
+    }), [0, 0]);
+    await page.getByRole('button', { name: 'Точки', exact: true }).click();
+    await page.getByText('Номера листов', { exact: true }).click();
+    assert.equal(await page.locator('#pad-sheet').getAttribute('data-pad-rule'), 'dots');
+    assert.ok(await page.locator('.pf-n').isHidden());
+    await page.getByRole('button', { name: 'Прокрутка', exact: true }).click();
+    assert.deepEqual(await page.locator('#pad-sheet .pad-rich-text').evaluateAll((fields) => fields.map((field) => field.value)), ['Первый лист', 'Текст']);
+    await page.getByRole('button', { name: 'Листание', exact: true }).click();
+    await page.evaluate(() => document.querySelector('#btn-settings').click());
+    await page.evaluate(async () => {
+      const field = window.__pad.editor().ta;
+      field.value = 'До\nПосле';
+      field.setSelectionRange(3, 3);
+      const canvas = document.createElement('canvas');
+      canvas.width = 60;
+      canvas.height = 30;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve));
+      const data = new DataTransfer();
+      data.items.add(new File([blob], 'notebook.png', { type: 'image/png' }));
+      field.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    const figure = page.locator('#pad-sheet .pad-image');
+    await figure.locator('img').waitFor();
+    await page.waitForFunction(() => document.querySelector('.pad-image img')?.naturalWidth === 60);
+    assert.deepEqual(await page.locator('#pad-sheet .pad-rich-text').evaluateAll((fields) => fields.map((field) => field.value)), ['До', 'После']);
+    await figure.focus();
+    await figure.getByRole('button', { name: 'Изменить размер картинки' }).press('ArrowLeft');
+    assert.equal(await figure.evaluate((element) => element.style.width), '95%');
+    await figure.click({ button: 'right' });
+    assert.deepEqual(await page.locator('#pad-context button').allTextContents(), ['Копировать', 'Вставить']);
+    await page.evaluate(async () => {
+      await window.__pad.close();
+      await window.__pad.open();
+    });
+    await figure.locator('img').waitFor();
+    assert.equal(await figure.evaluate((element) => element.style.width), '95%');
+    await page.evaluate(() => window.__pad.close());
+    await page.evaluate(async () => {
+      await window.__polka.goTo(1, { page: 0 });
+      const flow = document.getElementById('flow');
+      const walker = document.createTreeWalker(flow, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (node.length < 12) continue;
+        const range = document.createRange();
+        range.setStart(node, 0);
+        range.setEnd(node, 12);
+        const { top, bottom, left, right, width } = range.getBoundingClientRect();
+        if (!width || top < 0 || bottom > innerHeight || left < 0 || right > innerWidth) continue;
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+        document.querySelector('#sel-bar [data-act="translate"]').click();
+        return;
+      }
+      throw new Error('No visible text to translate');
+    });
+    await page.getByRole('button', { name: 'В блокнот', exact: true }).click();
+    const savedSource = page.locator('#pad-sheet .pad-source');
+    await savedSource.waitFor();
+    assert.match(await savedSource.getAttribute('data-markdown'), /\[Открыть в книге\]\(polka:\/\/open\?book=[^&]+&ch=1&off=\d+&len=\d+\)/);
+    assert.ok(await page.locator('#pad-sheet .pad-rich-text').evaluateAll((fields) => fields.some((field) => field.value.includes('Проверенный перевод'))));
     await page.evaluate(() => window.__pad.close());
 
     const end = await page.evaluate(async () => {

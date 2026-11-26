@@ -267,7 +267,7 @@
       aliases[key] = ids.size === 1 && (!Object.hasOwn(aliases, key) || aliases[key] === id) ? id : null;
     }
     LS.set('bookAliases', aliases);
-    for (const store of ['progress', 'bookmarks', 'bookmarksT', 'quotes', 'notes', 'bookNotes', 'pads', 'notePaths']) {
+    for (const store of ['progress', 'bookmarks', 'bookmarksT', 'quotes', 'notes', 'bookNotes', 'pads', 'padOptions', 'notePaths']) {
       const records = LS.get(store, {});
       let changed = false;
       for (const key of Object.keys(records)) {
@@ -1422,7 +1422,9 @@
       sf.classList.add('lit'); clearTimeout(R.sfT); R.sfT = setTimeout(() => sf.classList.remove('lit'), 1600);
       sh.classList.add('lit'); clearTimeout(R.shT); R.shT = setTimeout(() => sh.classList.remove('lit'), newHead ? 3200 : 1600);
     }
-    $('r-left').textContent = title ? title + ' · ' + pagesText : pagesText.charAt(0).toUpperCase() + pagesText.slice(1);
+    const number = title.match(/^(?:(?:глава|chapter)\s+)?(\d+)(?=[\s.:—–-]|$)/iu)?.[1];
+    const status = left > 0 ? 'ещё ' + left + ' стр.' + (number ? '' : ' в главе') : pagesText;
+    $('r-left').textContent = number && status !== 'конец книги' ? 'Глава ' + number + ' · ' + status : status.charAt(0).toUpperCase() + status.slice(1);
     $('r-right').textContent = (bookLeft > 0 ? bookLeft + ' стр. до конца книги · ' : '') + Math.floor(pct * 100) + '%';
     $('r-progress-fill').style.width = (pct * 100).toFixed(2) + '%';
   }
@@ -2421,9 +2423,12 @@
   function buildSettings() {
     $('set-themes').innerHTML = THEMES.map((t) => '<button class="theme-dot" data-theme="' + t.id + '" title="' + t.name + '" style="background:' + t.bg + ';color:' + t.fg + '">Aa</button>').join('');
     $('font-list').innerHTML = FONTS.map((f) => '<button class="font-opt" data-font="' + f.id + '" style="font-family:\'' + f.id + '\', Georgia, serif">' + f.name + '</button>').join('');
+    document.querySelector('.pad-colors').innerHTML = Object.entries(PAD_COLORS).map(([key, [label, color]]) =>
+      '<button data-pad-setting="paper" data-v="' + key + '" title="' + label + '" aria-label="' + label + '" style="--swatch:' + (color || 'var(--pad-paper)') + '"></button>').join('');
     syncSettings();
   }
   function syncSettings() {
+    syncPadSettings();
     document.querySelectorAll('.theme-dot').forEach((b) => b.classList.toggle('active', b.dataset.theme === S.theme));
     document.querySelectorAll('.font-opt').forEach((b) => b.classList.toggle('active', b.dataset.font === S.font));
     $('font-size-val').textContent = S.size;
@@ -2452,6 +2457,7 @@
   function changeSetting(k, v) {
     if (['font', 'size', 'lh', 'width', 'cols', 'justify', 'hyph', 'focus', 'typo'].includes(k)) dropClones();
     S[k] = v; saveSettings(); applyTheme(); syncSettings();
+    if (k === 'font' || k === 'size') PADE?.applyAppearance();
     if (k === 'keepAwake') syncReadingPower();
     if (k === 'focus') { applyFocus(); if (fxOn()) fxPick(); }
     if (k === 'theme' && S.focus === 'sent') paintSent();
@@ -2679,7 +2685,7 @@
     ev.stopPropagation();
     const open = $('settings').hidden;
     closePanels();
-    if (open) { $('settings').hidden = false; $('btn-settings').classList.add('active'); showUi(true); }
+    if (open) { syncSettings(); $('settings').hidden = false; $('btn-settings').classList.add('active'); showUi(true); }
   };
   $('scrim').onclick = closePanels;
   $('drawer-tabs').onclick = (ev) => { const b = ev.target.closest('button'); if (b) switchDrawerTab(b.dataset.tab); };
@@ -2704,6 +2710,7 @@
     if (!ev.target.closest('.font-pick')) closeFontMenu();
     if (!t) return;
     if (t.dataset.tab) { S.setTab = t.dataset.tab; saveSettings(); syncSettings(); }
+    else if (t.dataset.padSetting && PADE) PADE.setOption(t.dataset.padSetting, t.dataset.v);
     else if (t.id === 'font-btn') { const open = $('font-list').hidden; $('font-list').hidden = !open; t.classList.toggle('open', open); }
     else if (t.id === 'snd-chip') { const order = ['soft', 'loud', 'off']; changeSetting('sound', order[(order.indexOf(S.sound) + 1) % 3]); if (S.sound !== 'off') turnSound(S.flip === 'curl' ? 'curl' : S.flip === 'turn' ? 'turn' : 'slide', 0.66, true); }
     else if (t.parentNode.id === 'set-auto') { const v = t.dataset.v === 'off' ? 'off' : +t.dataset.v; if (v !== 'off') S.autoLast = v; AUTO.paused = false; changeSetting('auto', v); }
@@ -3023,8 +3030,8 @@
     }
     hideSelBar();
     const rects = visibleRects(s.range);
-    if (b.dataset.act === 'translate') showTranslation(s.text, rects);
-    else if (b.dataset.act === 'meaning') showMeaning(s.text, rects);
+    if (b.dataset.act === 'translate') showTranslation(s.text, rects, padSource(s));
+    else if (b.dataset.act === 'meaning') showMeaning(s.text, rects, padSource(s));
     else if (b.dataset.act === 'quote') startDraft(s, rects, 'quote');
     else if (b.dataset.act === 'note') startDraft(s, rects, 'note');
   });
@@ -3075,7 +3082,7 @@
       tl,
     };
   }
-  async function showTranslation(text, rects) {
+  async function showTranslation(text, rects, source) {
     const token = (R.cardToken = Math.random());
     openCard(cardLoading('Перевод'), rects);
     try {
@@ -3089,6 +3096,7 @@
         '<div class="ic-main">' + esc(t.text).replace(/\n/g, '<br>') + '</div>' +
         (t.dict.length ? '<div class="ic-dict">' + t.dict.map((d) => '<div><span class="ic-pos">' + esc(d.pos) + '</span> ' + esc(d.terms.join(', ')) + '</div>').join('') + '</div>' : '') +
         '<div class="ic-foot"><button class="link-btn" data-url="' + esc(gUrl) + '">Открыть в Google Переводчике ↗</button></div>');
+      if (t.text) offerPadResult(source, text, t.text);
     } catch (err) {
       if (token === R.cardToken) refreshCard('<div class="ic-head"><span class="ic-kicker">Перевод</span></div>' + cardError(err));
     }
@@ -3186,9 +3194,9 @@
   }
   const meaningCache = new Map();
   let lastMeaning = null;
-  async function showMeaning(text, rects) {
+  async function showMeaning(text, rects, source) {
     const token = (R.cardToken = Math.random());
-    lastMeaning = { text, rects };
+    lastMeaning = { text, rects, source };
     // без ударений (за\u0301мок), мягких переносов, неразрывных пробелов и знаков по краям
     const q = text.replace(/[\u0300\u0301\u00ad\u200b-\u200f\u2060\ufeff]/g, '').replace(/[\s\u00a0]+/g, ' ')
       .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').slice(0, 120).trim();
@@ -3225,6 +3233,7 @@
         html += '<div class="ic-empty small">' + (errDict ? 'Викисловарь сейчас не ответил' : 'Википедия сейчас не ответила') + (err.offline ? '' : ' (' + esc(err.message) + ')') + '</div>';
       }
       refreshCard(html);
+      if (done) offerPadResult(source, text, dict?.means.join('\n') || ext);
     };
     const showImg = async () => {
       if (!wiki || wiki.disamb || !wiki.thumb) return;
@@ -3247,7 +3256,7 @@
   }
   infoCard.addEventListener('click', (ev) => {
     const r = ev.target.closest('[data-retry]');
-    if (r && lastMeaning) showMeaning(lastMeaning.text, lastMeaning.rects);
+    if (r && lastMeaning) showMeaning(lastMeaning.text, lastMeaning.rects, lastMeaning.source);
   });
   // картинка не загрузилась — убрать, без «битого» значка
   infoCard.addEventListener('error', (ev) => { if (ev.target && ev.target.classList && ev.target.classList.contains('ic-thumb')) ev.target.remove(); }, true);
@@ -4776,6 +4785,50 @@
   // Сохраняется сам — при закрытии и через секунду тишины. В дневнике — раздел «## Блокнот» в файле книги,
   // листы разделены строкой «---».
   const pads = () => LS.get('pads', {});
+  const PAD_COLORS = { ivory: ['Слоновая кость', null], sand: ['Песочный', '#e3d0a7'], sage: ['Серо-зелёный', '#c4cfc4'], rose: ['Серо-розовый', '#d7c4c6'] };
+  const PAD_OPTIONS = { font: 'book', paper: 'ivory', rule: 'plain', navigation: 'pages', numbers: true };
+  const padOptions = (id) => ({ ...PAD_OPTIONS, ...LS.get('padOptions', {})[id] });
+  const PAD_IMAGE = /^!\[Картинка\]\(polka-pad-image:([a-z0-9]+)\/(\d+)\)$/;
+  const PAD_LINK = /^\[Открыть в книге\]\((polka:\/\/open\?book=[^)\s]+)\)$/;
+  const padEmbedded = (text) => PAD_IMAGE.test(text) || PAD_LINK.test(text);
+  const diaryPadImages = new Set();
+  const padImageKey = (key) => 'pad-image-' + key;
+  async function readPadImage(key) {
+    const local = await DB.get('kv', padImageKey(key));
+    if (local || !native?.dataRead) return local;
+    const dir = await quotesDirQuiet();
+    if (!dir) return null;
+    const stored = await native.dataRead(dir, padImageKey(key) + '.json');
+    if (!stored || stored.length > 16 * 1024 * 1024) return null;
+    const data = JSON.parse(stored);
+    if (typeof data !== 'string' || !data.startsWith('data:image/png;base64,')) return null;
+    const bytes = Uint8Array.from(atob(data.slice(22)), (character) => character.charCodeAt(0));
+    const blob = new Blob([bytes], { type: 'image/png' });
+    await DB.put('kv', blob, padImageKey(key));
+    diaryPadImages.add(dir + '\n' + key);
+    return blob;
+  }
+  async function syncPadImages(body) {
+    if (!native?.dataWrite) return;
+    const keys = new Set(body.split('\n').map((line) => line.match(PAD_IMAGE)?.[1]).filter(Boolean));
+    if (!keys.size) return;
+    const dir = await quotesDirQuiet();
+    if (!dir) return;
+    for (const key of keys) {
+      const exported = dir + '\n' + key;
+      if (diaryPadImages.has(exported)) continue;
+      const blob = await readPadImage(key);
+      if (!blob) continue;
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      await native.dataWrite(dir, padImageKey(key) + '.json', JSON.stringify(data));
+      diaryPadImages.add(exported);
+    }
+  }
   const padOf = (id) => { const x = pads()[id]; return x && Array.isArray(x.pages) ? x : null; };
   const padText = (x) => (x ? x.pages.join('\n\n---\n\n').trim() : '');
   const padEmpty = (x) => !x || !x.pages.some((pg) => pg.trim());
@@ -4797,6 +4850,7 @@
     const at = r ? r.at : (bookThoughtsRange(lines)?.after ?? sectionStart(lines));
     if (r) lines.splice(at, r.after - at);
     const body = padText(padOf(id));
+    await syncPadImages(body);
     if (body) lines.splice(at, 0, '', PAD_SEC, '', ...body.split('\n'), '', PAD_END, '');
     await native.noteWrite(p, tidy(lines));
     return p;
@@ -4822,8 +4876,136 @@
       const ctx = padCtxFor(id);
       all[id] = { pages: pages.slice(), t: Date.now(), title: ctx.title, author: ctx.author };
     }
-    LS.set('pads', all);
+    if (!LS.set('pads', all)) return;
     if (toDiary !== false) writePadNote(id).catch((e) => console.warn(e));
+  }
+
+  function syncPadSettings() {
+    const open = !!R.book && !$('pad').hidden;
+    const settings = $('settings');
+    const tab = settings.querySelector('[data-tab="pad"]');
+    tab.hidden = !open;
+    if (!open && S.setTab === 'pad') S.setTab = 'text';
+    settings.classList.toggle('pad-aligned', open && S.setTab === 'pad');
+    if (!open) return;
+    const options = padOptions(R.id);
+    settings.querySelectorAll('[data-pad-setting]').forEach((button) => {
+      const active = options[button.dataset.padSetting] === button.dataset.v;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    $('set-pad-numbers').checked = options.numbers;
+  }
+
+  function padSource(s) {
+    return { book: R.book, id: R.id, ch: R.ch, off: s.off, len: s.len };
+  }
+  function offerPadResult(source, text, result) {
+    if (!source?.book || source.book !== R.book || !result) return;
+    const button = document.createElement('button');
+    button.className = 'link-btn ic-pad';
+    button.textContent = 'В блокнот';
+    $('ic-body').append(button);
+    try { placeNear(infoCard, JSON.parse(infoCard.dataset.anchor), true); } catch (e) { /* карточку уже закрыли */ }
+    button.onclick = async () => {
+      if (source.book !== R.book) return;
+      const url = 'polka://open?book=' + encodeURIComponent(source.id) + '&ch=' + source.ch + '&off=' + source.off + '&len=' + source.len;
+      await openPad();
+      if (source.book !== R.book || !PADE) return;
+      PADE.insertBlock(text.trim() + ' — ' + result.trim() + '\n[Открыть в книге](' + url + ')');
+      toast('Добавлено в блокнот');
+    };
+  }
+
+  async function notebookImage(blob) {
+    if (blob.size > 24 * 1024 * 1024) throw new Error('Файл изображения слишком большой');
+    const bitmap = await createImageBitmap(blob);
+    try {
+      const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const png = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!png) throw new Error('Не удалось прочитать изображение');
+      return png;
+    } finally { bitmap.close(); }
+  }
+
+  const notebookListeners = new WeakMap();
+  function notebookClipboard(host, E) {
+    notebookListeners.get(host)?.abort();
+    const lifetime = new AbortController();
+    notebookListeners.set(host, lifetime);
+    const fail = () => toast('Не удалось воспользоваться буфером обмена');
+    const input = () => host.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA' ? document.activeElement : E.ta;
+    const close = () => { $('pad-context').hidden = true; };
+    const paste = (blob, target, text) => {
+      if (!blob) { if (text) E.pasteText(target, text); return; }
+      E.insertImage(blob, target).catch(() => toast('Не удалось вставить картинку'));
+    };
+    host.onpaste = (ev) => {
+      const item = Array.from(ev.clipboardData?.items || []).find((x) => x.kind === 'file' && x.type.startsWith('image/'));
+      if (!item) {
+        if (ev.target.tagName === 'TEXTAREA') return;
+        const text = ev.clipboardData?.getData('text/plain');
+        if (!text) return;
+        ev.preventDefault();
+        paste(null, input(), text);
+        return;
+      }
+      ev.preventDefault();
+      paste(item.getAsFile(), input());
+    };
+    host.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      const target = ev.target.closest('textarea') || input();
+      if (!target) return;
+      const menu = $('pad-context');
+      menu.hidden = false;
+      menu.style.left = Math.max(0, Math.min(ev.clientX, innerWidth - menu.offsetWidth - 8)) + 'px';
+      menu.style.top = Math.max(0, Math.min(ev.clientY, innerHeight - menu.offsetHeight - 8)) + 'px';
+      const image = ev.target.closest('[data-pad-image]')?.dataset.padImage || E.selectedImage;
+      const selected = target.value.slice(target.selectionStart, target.selectionEnd);
+      menu.querySelector('[data-copy]').disabled = !selected && !image;
+      menu.onclick = async (event) => {
+        const action = event.target.closest('button');
+        if (!action) return;
+        close();
+        try {
+          if ('copy' in action.dataset) {
+            const data = image && await readPadImage(image);
+            if (data) await copyPadImage(data);
+            else if (selected) {
+              if (native?.padClipboardWrite) await native.padClipboardWrite({ text: selected });
+              else await navigator.clipboard.writeText(selected);
+            }
+          } else if (native?.padClipboardRead) {
+            const data = await native.padClipboardRead();
+            paste(data.image && new Blob([data.image], { type: 'image/png' }), target, data.text);
+          } else {
+            const items = await navigator.clipboard.read();
+            const item = items.find((x) => x.types.some((type) => type.startsWith('image/')));
+            if (item) paste(await item.getType(item.types.find((type) => type.startsWith('image/'))), target);
+            else {
+              const text = items.find((x) => x.types.includes('text/plain'));
+              if (text) paste(null, target, await (await text.getType('text/plain')).text());
+            }
+          }
+        } catch (err) { fail(); }
+      };
+    };
+    host.addEventListener('keydown', (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.code === 'KeyC' && E.selectedImage) {
+        ev.preventDefault();
+        readPadImage(E.selectedImage).then((data) => data && copyPadImage(data)).catch(fail);
+      }
+    }, { capture: true, signal: lifetime.signal });
+  }
+
+  async function copyPadImage(blob) {
+    if (native?.padClipboardWrite) await native.padClipboardWrite({ image: new Uint8Array(await blob.arrayBuffer()) });
+    else await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   }
 
   // ---- листок: страницы как в настоящем блокноте ----
@@ -4833,23 +5015,245 @@
     const x = padOf(id);
     const E = { id, pages: x ? x.pages.slice() : [''], cur: 0, dirty: false, timer: null };
     host.innerHTML = '<textarea class="pad-ta" spellcheck="true" lang="ru" aria-label="Блокнот"></textarea>' +
+      '<div class="pad-rich" hidden></div>' +
       '<div class="pad-folio" hidden><button class="pf-prev" aria-label="Предыдущий лист">‹</button><span class="pf-n"></span><button class="pf-next" aria-label="Следующий лист">›</button></div>';
-    const ta = host.querySelector('.pad-ta'), folio = host.querySelector('.pad-folio');
+    const ta = host.querySelector('.pad-ta'), folio = host.querySelector('.pad-folio'), rich = host.querySelector('.pad-rich');
+    let options = padOptions(id), visiblePage = 0;
+    const paged = () => options.navigation !== 'scroll';
     ta.value = E.pages[0]; // первый show() сохраняет поле в текущий лист — поле должно быть заполнено
-    const commit = () => { E.pages[E.cur] = ta.value; };
+    const commit = () => { if (!ta.hidden) E.pages[E.cur] = ta.value; };
+    const number = folio.querySelector('.pf-n'), prev = folio.querySelector('.pf-prev'), next = folio.querySelector('.pf-next');
+    function syncFolio() {
+      const n = E.pages.length;
+      folio.hidden = !paged() ? !options.numbers : n < 2 && (!options.numbers || !E.pages[0].trim());
+      number.hidden = !options.numbers;
+      number.innerHTML = '<b>' + ((paged() ? E.cur : visiblePage) + 1) + '</b> / ' + n;
+      prev.hidden = next.hidden = !paged();
+      prev.disabled = E.cur === 0;
+      next.disabled = E.cur === n - 1;
+    }
     const show = (i, caret, saveCurrent = true) => {
       if (saveCurrent) commit();
       E.cur = Math.max(0, Math.min(E.pages.length - 1, i));
+      visiblePage = E.cur;
       ta.value = E.pages[E.cur];
-      const n = E.pages.length;
-      folio.hidden = n < 2 && !E.pages[0].trim();
-      folio.querySelector('.pf-n').innerHTML = '<b>' + (E.cur + 1) + '</b> / ' + n;
-      folio.querySelector('.pf-prev').disabled = E.cur === 0;
-      folio.querySelector('.pf-next').disabled = E.cur === n - 1;
-      if (caret != null) { ta.focus(); const c = caret < 0 ? ta.value.length : caret; ta.setSelectionRange(c, c); }
+      E.selectedImage = null;
+      ta.hidden = !paged() || ta.value.split('\n').some(padEmbedded);
+      rich.hidden = !ta.hidden;
+      if (ta.hidden) renderRich();
+      else { rich.replaceChildren(); E.ta = ta; }
+      syncFolio();
+      if (caret != null) focusAt(E.cur, caret < 0 ? E.pages[E.cur].length : caret);
+      else if (!paged()) rich.querySelector('[data-pad-page="' + E.cur + '"]')?.scrollIntoView({ block: 'nearest' });
     };
     const saveSoon = () => { E.dirty = true; clearTimeout(E.timer); E.timer = setTimeout(E.save, 1000); };
     E.save = () => { clearTimeout(E.timer); if (!E.dirty) return; commit(); E.dirty = false; savePad(E.id, E.pages.slice()); if (opts.onSave) opts.onSave(); };
+    E.applyAppearance = () => {
+      host.dataset.padRule = options.rule;
+      host.dataset.padFont = options.font;
+      host.style.setProperty('--pad-custom-paper', PAD_COLORS[options.paper]?.[1] || 'var(--pad-paper)');
+      host.style.setProperty('--pad-text-size', S.size + 'px');
+      host.querySelectorAll('.pad-rich-text').forEach(sizeText);
+    };
+    E.setOption = (key, value) => {
+      commit();
+      const hadFocus = host.contains(document.activeElement);
+      const caret = cursorOffset(E.ta);
+      const all = LS.get('padOptions', {});
+      options = { ...options, [key]: value };
+      all[id] = options;
+      LS.set('padOptions', all);
+      E.applyAppearance();
+      if (key === 'navigation') {
+        const index = value === 'pages' ? visiblePage : E.cur;
+        const offset = index === E.cur ? caret : 0;
+        show(index, null, false);
+        focusAt(index, offset, hadFocus);
+      } else syncFolio();
+      syncPadSettings();
+    };
+    function cursorOffset(target) {
+      if (!target || target === ta) return ta.selectionStart;
+      const section = target.closest('[data-pad-page]');
+      const fields = Array.from(section?.children || []);
+      const index = fields.indexOf(target);
+      return fields.slice(0, Math.max(0, index)).reduce((n, field) => n + chunkValue(field).length + 1, target.selectionStart);
+    }
+    function focusAt(index, caret, focus = true) {
+      let target = ta;
+      if (ta.hidden) {
+        const section = rich.querySelector('[data-pad-page="' + index + '"]');
+        let last;
+        for (const field of section?.children || []) {
+          if (field.tagName === 'TEXTAREA') {
+            last = field;
+            if (caret <= field.value.length) break;
+          }
+          caret -= chunkValue(field).length + 1;
+        }
+        target = last || E.ta;
+      }
+      if (!target) return;
+      E.ta = target;
+      if (ta.hidden && !focus) target.scrollIntoView({ block: 'nearest' });
+      if (focus) target.focus();
+      const offset = Math.max(0, Math.min(target.value.length, caret));
+      target.setSelectionRange(offset, offset);
+    }
+    const chunkValue = (node) => node.tagName === 'TEXTAREA' ? node.value : node.dataset.markdown;
+    function richInput(section) {
+      const index = Number(section.dataset.padPage);
+      E.pages[index] = Array.from(section.children, chunkValue).join('\n');
+      saveSoon();
+    }
+    function sizeText(field) {
+      field.style.height = '0px';
+      field.style.height = field.scrollHeight + 'px';
+    }
+    let drawVersion = 0;
+    function renderRich() {
+      const version = ++drawVersion;
+      rich.replaceChildren();
+      E.ta = null;
+      const indexes = paged() ? [E.cur] : E.pages.map((_, index) => index);
+      for (const index of indexes) {
+        const section = document.createElement('div');
+        section.className = 'pad-rich-page';
+        section.dataset.padPage = index;
+        const addText = (lines) => {
+          const field = document.createElement('textarea');
+          field.className = 'pad-rich-text';
+          field.value = lines.join('\n');
+          field.lang = 'ru';
+          field.setAttribute('aria-label', 'Блокнот, лист ' + (index + 1));
+          field.oninput = () => { sizeText(field); richInput(section); };
+          field.onfocus = () => { E.ta = field; E.cur = index; selectImage(null); syncFolio(); };
+          field.onpointerdown = () => selectImage(null);
+          field.onkeydown = (event) => {
+            event.stopPropagation();
+            if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.code === 'KeyN')) { event.preventDefault(); opts.onEscape?.(); }
+            else if (paged() && event.key === 'PageUp' && index > 0) { event.preventDefault(); show(index - 1, -1); }
+            else if (paged() && event.key === 'PageDown') {
+              event.preventDefault();
+              if (index === E.pages.length - 1 && E.pages[index].trim()) E.pages.push('');
+              show(index + 1, 0);
+            }
+          };
+          section.append(field);
+          if (index === E.cur && !E.ta) E.ta = field;
+        };
+        let text = [];
+        for (const line of E.pages[index].split('\n')) {
+          const image = line.match(PAD_IMAGE), link = line.match(PAD_LINK);
+          if (!image && !link) { text.push(line); continue; }
+          addText(text); text = [];
+          if (image) addImage(section, line, image, version);
+          else {
+            const open = document.createElement('button');
+            open.className = 'pad-source';
+            open.dataset.markdown = line;
+            open.textContent = 'Открыть в книге';
+            open.onclick = () => openLink(link[1]);
+            section.append(open);
+          }
+        }
+        addText(text);
+        rich.append(section);
+        section.querySelectorAll('textarea').forEach(sizeText);
+      }
+    }
+    function selectImage(fig) {
+      rich.querySelectorAll('[data-pad-image]').forEach((item) => item.classList.toggle('selected', item === fig));
+      E.selectedImage = fig?.dataset.padImage || null;
+    }
+    function addImage(section, line, [, key, size], version) {
+      const figure = document.createElement('figure');
+      figure.className = 'pad-image';
+      figure.dataset.markdown = line;
+      figure.dataset.padImage = key;
+      const img = document.createElement('img');
+      img.alt = 'Картинка из блокнота';
+      img.draggable = false;
+      const width = (value) => {
+        const clamped = Math.max(15, Math.min(100, Math.round(value)));
+        figure.style.width = clamped + '%';
+        figure.dataset.markdown = '![Картинка](polka-pad-image:' + key + '/' + clamped + ')';
+      };
+      width(Number(size));
+      const handle = document.createElement('button');
+      handle.className = 'pad-resize';
+      handle.setAttribute('aria-label', 'Изменить размер картинки');
+      figure.tabIndex = 0;
+      figure.onfocus = figure.onpointerdown = () => selectImage(figure);
+      figure.onkeydown = (event) => {
+        event.stopPropagation();
+        if (event.target !== figure) return;
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+        event.preventDefault();
+        const before = figure.previousElementSibling, after = figure.nextElementSibling;
+        before.value += (before.value && after.value ? '\n' : '') + after.value;
+        after.remove(); figure.remove();
+        sizeText(before); richInput(section); selectImage(null); before.focus();
+      };
+      handle.onkeydown = (event) => {
+        if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+        event.preventDefault();
+        width(parseInt(figure.style.width, 10) + (event.key === 'ArrowRight' ? 5 : -5));
+        richInput(section);
+      };
+      handle.onpointerdown = (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        handle.setPointerCapture(event.pointerId);
+        const startX = event.clientX, startWidth = figure.getBoundingClientRect().width;
+        handle.onpointermove = (move) => width(100 * (startWidth + move.clientX - startX) / section.clientWidth);
+        handle.onlostpointercapture = () => { handle.onpointermove = null; richInput(section); };
+      };
+      figure.append(img, handle);
+      section.append(figure);
+      readPadImage(key).then(async (blob) => {
+        if (version !== drawVersion || !figure.isConnected) return;
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          img.src = url;
+          try { await img.decode(); } catch (e) { /* картинка недоступна */ } finally { URL.revokeObjectURL(url); }
+        } else img.replaceWith(document.createTextNode('Картинка недоступна'));
+      }).catch(() => { if (figure.isConnected) img.replaceWith(document.createTextNode('Картинка недоступна')); });
+    }
+    function insertBlock(block, target = E.ta) {
+      if (!target || !host.contains(target)) return;
+      commit();
+      const index = Number(target.closest('[data-pad-page]')?.dataset.padPage ?? E.cur);
+      const start = cursorOffset(target), end = start + target.selectionEnd - target.selectionStart;
+      const before = E.pages[index].slice(0, start), after = E.pages[index].slice(end);
+      const left = before.endsWith('\n') || !before ? before : before + '\n';
+      const right = after.startsWith('\n') || !after ? after : '\n' + after;
+      E.pages[index] = left + block + right;
+      show(index, null, false);
+      focusAt(index, left.length + block.length + 1);
+      saveSoon();
+      E.save();
+    }
+    E.insertBlock = insertBlock;
+    E.insertImage = async (blob, target) => {
+      const image = await notebookImage(blob);
+      if (!host.contains(target) || !host.isConnected || host.getClientRects().length === 0) return;
+      const key = newId('i');
+      await DB.put('kv', image, padImageKey(key));
+      if (host.contains(target) && host.getClientRects().length > 0) insertBlock('![Картинка](polka-pad-image:' + key + '/100)', target);
+    };
+    E.pasteText = (target, text) => {
+      if (!host.contains(target) || host.getClientRects().length === 0) return;
+      target.setRangeText(text, target.selectionStart, target.selectionEnd, 'end');
+      target.dispatchEvent(new Event('input'));
+      target.focus();
+    };
+    rich.onscroll = () => {
+      if (paged()) return;
+      const top = rich.getBoundingClientRect().top;
+      const section = Array.from(rich.children).find((page) => page.getBoundingClientRect().bottom > top + 1);
+      if (section) { visiblePage = Number(section.dataset.padPage); syncFolio(); }
+    };
     // лист переполнен — хвост переезжает на следующий лист (и так по цепочке). Меряем копией поля той же ширины.
     const meter = document.createElement('textarea'); meter.className = 'pad-ta'; meter.tabIndex = -1; meter.setAttribute('aria-hidden', 'true');
     meter.style.cssText = 'visibility:hidden;pointer-events:none';
@@ -4915,17 +5319,18 @@
       else if (ev.target.closest('.pf-next')) show(E.cur + 1, 0);
     });
     let wAcc = 0, wLock = 0;
-    host.addEventListener('wheel', (ev) => {
+    host.onwheel = (ev) => {
       ev.stopPropagation();
-      if (E.pages.length < 2) return;
+      if (!paged() || !rich.hidden || E.pages.length < 2) return;
       wAcc += ev.deltaY;
       if (Date.now() < wLock || Math.abs(wAcc) < 60) return;
       const d = wAcc > 0 ? 1 : -1; wAcc = 0; wLock = Date.now() + 350;
       if (E.cur + d >= 0 && E.cur + d < E.pages.length) show(E.cur + d, d > 0 ? 0 : -1);
-    }, { passive: true });
+    };
+    notebookClipboard(host, E);
+    E.applyAppearance();
     show(Math.max(0, E.pages.length - 1));
     E.focusEnd = () => show(E.cur, -1);
-    E.ta = ta;
     return E;
   }
 
@@ -4937,6 +5342,7 @@
     closePanels();
     $('pad').hidden = false; reader.classList.add('pad-on'); $('btn-pad').classList.add('active');
     PADE = padEditor($('pad-sheet'), R.id, { onEscape: () => closePad() });
+    syncSettings();
     const editor = PADE;
     await relayout();
     if (PADE === editor) editor.focusEnd();
@@ -4946,11 +5352,16 @@
     if (PADE) PADE.save();
     PADE = null;
     $('pad').hidden = true; reader.classList.remove('pad-on'); $('btn-pad').classList.remove('active');
+    syncSettings();
     await relayout();
   }
   const togglePad = () => (padOpen() ? closePad() : openPad());
   window.__pad = { open: openPad, close: closePad, editor: () => PADE };
   $('btn-pad').onclick = togglePad;
+  $('set-pad-numbers').onchange = (event) => PADE?.setOption('numbers', event.target.checked);
+  document.addEventListener('pointerdown', (event) => {
+    if (!event.target.closest('#pad-context')) $('pad-context').hidden = true;
+  });
   // клик по тексту книги (не по полям для листания) закрывает листок
   stage.addEventListener('mousedown', (ev) => {
     if (!padOpen() || ev.button !== 0) return;
