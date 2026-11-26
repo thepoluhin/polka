@@ -5131,7 +5131,7 @@
           field.onpointerdown = () => selectImage(null);
           field.onkeydown = (event) => {
             event.stopPropagation();
-            if (event.key === 'Escape') { event.preventDefault(); opts.onEscape?.(); }
+            if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.code === 'KeyN')) { event.preventDefault(); opts.onEscape?.(); }
             else if (paged() && event.key === 'PageUp' && index > 0) { event.preventDefault(); show(index - 1, -1); }
             else if (paged() && event.key === 'PageDown') {
               event.preventDefault();

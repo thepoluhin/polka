@@ -1112,6 +1112,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; margin: 0 2px; b
 .pad-sheet[data-pad-rule="dots"] { background-image: radial-gradient(circle, color-mix(in srgb, var(--pad-ink) 32%, transparent) .65px, transparent 1px); background-size: 16px 16px; }
 .pad-sheet[data-pad-rule] { font-size: var(--pad-text-size, 15px); }
 .pad-sheet[data-pad-font] .pad-ta, .pad-rich-text { font-family: var(--pad-text-font); font-size: var(--pad-text-size); line-height: var(--pad-line); }
+.pad-sheet[data-pad-font] .pad-ta { overflow-y: auto; scrollbar-width: thin; }
 .pad-rich { position: absolute; inset: 34px 21px 54px 34px; padding-right: 13px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .pad-rich-page + .pad-rich-page { margin-top: 24px; padding-top: 23px; border-top: 1px solid color-mix(in srgb, var(--pad-ink) 16%, transparent); }
 .pad-rich-text { display: block; width: 100%; min-height: var(--pad-line); resize: none; overflow: hidden; padding: 0; border: 0; outline: 0; background: none; color: inherit; caret-color: var(--accent); }
