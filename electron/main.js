@@ -9,7 +9,6 @@ const { createHash } = require('crypto');
 const BOOK_RE = /\.(fb2|epub|fb2\.zip)$/i;
 const DEBUG = !!process.env.POLKA_DEBUG;
 let win = null;
-let quitting = false;
 let keepAwakeForReading = false;
 let readingPowerBlock = null;
 
@@ -56,7 +55,25 @@ const norm = (p) => { const r = path.resolve(String(p || '')); return process.pl
 const under = (p, root) => { const a = norm(p), r = norm(root); return a === r || a.startsWith(r.endsWith(path.sep) ? r : r + path.sep); };
 function allowRoot(dir) { if (dir && !allowed.roots.some((r) => norm(r) === norm(dir))) { allowed.roots.push(path.resolve(dir)); saveAllowed(); } }
 function allowFile(p) { if (p && !allowed.files.some((f) => norm(f) === norm(p))) { allowed.files.push(path.resolve(p)); allowed.files = allowed.files.slice(-500); saveAllowed(); } }
-const inRoots = (p) => !!p && allowed.roots.some((r) => under(p, r));
+// Для нового файла разрешаем существующего родителя. Битую ссылку считаем недоступной.
+function realDestination(p) {
+  try { return fs.realpathSync.native(p); }
+  catch (err) {
+    if (err.code !== 'ENOENT') return null;
+    try { fs.lstatSync(p); return null; }
+    catch (statErr) { if (statErr.code !== 'ENOENT') return null; }
+    const parent = path.dirname(p);
+    if (parent === p) return null;
+    const resolved = realDestination(parent);
+    return resolved && path.join(resolved, path.basename(p));
+  }
+}
+function withinRoot(p, root) {
+  if (typeof p !== 'string' || !p || !under(p, root)) return false;
+  const target = realDestination(path.resolve(p)), base = realDestination(path.resolve(root));
+  return !!(target && base && under(target, base));
+}
+const inRoots = (p) => allowed.roots.some((r) => withinRoot(p, r));
 const canRead = (p) => inRoots(p) || allowed.files.some((f) => norm(f) === norm(p));
 
 // запросы принимаем только от нашего окна
@@ -71,11 +88,15 @@ function handle(ch, fn) {
 let pendingFile = fileFromArgs(process.argv);
 let pendingUrl = urlFromArgs(process.argv);
 
-// =====================================================================
-//  Протокол polka:// (ссылки из файлов дневника).
-//  Регистрирует установленная копия; другая (например, собранная для проверки) — только если установленной нет.
-// =====================================================================
 const MY_EXE = process.execPath;
+
+// =====================================================================
+//  Одна копия программы; более новая версия, запущенная поверх, забирает управление
+// =====================================================================
+const newer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+if (!app.requestSingleInstanceLock({ version: app.getVersion(), exe: MY_EXE, args: process.argv.slice(1).filter((a) => /^polka:/i.test(a) || BOOK_RE.test(a)) })) { app.quit(); return; }
+
+// Протокол polka:// регистрирует установленная копия. Пробная — если установленной нет.
 try {
   if (process.defaultApp) app.setAsDefaultProtocolClient('polka', process.execPath, [path.resolve(process.argv[1] || '.')]);
   else {
@@ -84,16 +105,10 @@ try {
   }
 } catch (e) { /* не критично */ }
 
-// =====================================================================
-//  Одна копия программы; более новая версия, запущенная поверх, забирает управление
-// =====================================================================
-const newer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
-if (!app.requestSingleInstanceLock({ version: app.getVersion(), exe: MY_EXE, args: process.argv.slice(1).filter((a) => /^polka:/i.test(a) || BOOK_RE.test(a)) })) { app.quit(); }
 app.on('second-instance', (e, argv, cwd, data) => {
   if (data && data.version && data.exe && newer(data.version, app.getVersion())) {
     // штатное закрытие (окно успеет сохранить место чтения), затем запуск новой версии
     app.relaunch({ execPath: data.exe, args: data.args || [] });
-    quitting = true;
     if (win && !win.isDestroyed()) win.close(); else app.quit();
     return;
   }
@@ -178,7 +193,7 @@ async function scanDir(dir) {
     for (const it of items) {
       const p = path.join(d, it.name);
       if (it.isDirectory()) { if (depth < 12 && !it.name.startsWith('.')) await walk(p, depth + 1); }
-      else if (BOOK_RE.test(it.name)) {
+      else if (BOOK_RE.test(it.name) && (it.isFile() || withinRoot(p, dir))) {
         try { const s = await fs.promises.stat(p); out.push({ path: p, name: it.name, size: s.size, mtime: s.mtimeMs }); } catch (e) { /* skip */ }
       }
     }
@@ -296,7 +311,7 @@ handle('quotes-default-dir', (e, booksDir) => (booksDir && inRoots(booksDir) ? p
 handle('diary-dir', async (e, booksDir) => {
   if (!inRoots(booksDir)) return { dir: null };
   const dir = path.join(booksDir, 'Читательский дневник'), old = path.join(booksDir, 'Цитаты');
-  if (fs.existsSync(dir) || !fs.existsSync(old)) return { dir };
+  if (fs.existsSync(dir) || !fs.existsSync(old) || !withinRoot(old, booksDir)) return { dir };
   try { await fs.promises.rename(old, dir); return { dir, renamed: true, old }; }
   catch (err) { return { dir: old, kept: true }; }
 });
@@ -314,10 +329,12 @@ async function writeAtomic(p, content) {
 handle('note-create', async (e, { dir, sub, name, content, onlyIfMissing }) => {
   if (!inRoots(dir)) throw new Error('папка дневника не разрешена');
   const folder = diaryPath(dir, sub);
+  if (!withinRoot(folder, dir)) throw new Error('папка дневника не разрешена');
   await fs.promises.mkdir(folder, { recursive: true });
   const base = safeName(name);
   let p = path.join(folder, base + '.md');
   if (onlyIfMissing) {
+    if (!withinRoot(p, dir)) throw new Error('файл вне дневника');
     try { await fs.promises.writeFile(p, content, { encoding: 'utf8', flag: 'wx' }); }
     catch (err) { if (err.code !== 'EEXIST') throw err; }
     return p;
@@ -342,7 +359,11 @@ handle('note-read', async (e, p) => {
 handle('note-write', async (e, p, content) => { if (!mdOk(p)) throw new Error('файл вне дневника'); await writeAtomic(p, content); return true; });
 handle('note-delete', async (e, p) => { if (!mdOk(p)) return false; try { await fs.promises.unlink(p); return true; } catch (err) { return false; } });
 // служебный файл «Полки» в папке дневника (.polka/…json): место чтения, закладки, копия записей
-const dataPath = (dir, name) => (inRoots(dir) && /^[a-z0-9-]+\.json$/.test(name) ? path.join(dir, '.polka', name) : null);
+const dataPath = (dir, name) => {
+  if (!inRoots(dir) || !/^[a-z0-9-]+\.json$/.test(name)) return null;
+  const p = path.join(dir, '.polka', name);
+  return withinRoot(p, dir) ? p : null;
+};
 handle('data-read', async (e, dir, name) => { const p = dataPath(dir, name); if (!p) return null; try { return await fs.promises.readFile(p, 'utf8'); } catch (err) { return null; } });
 handle('data-write', async (e, dir, name, content) => {
   const p = dataPath(dir, name);
@@ -362,6 +383,7 @@ handle('obsidian-graph', async (e, dir, done) => {
   if (!d || !fs.existsSync(path.join(d, '.obsidian'))) return { vault: null };
   if ((done || []).includes(d)) return { vault: d, stuck: true };
   const gp = path.join(d, '.obsidian', 'graph.json');
+  if (!withinRoot(gp, d)) return { vault: null };
   let g = {};
   if (fs.existsSync(gp)) {
     // файл есть, но не читается (Obsidian как раз пишет его) — не трогаем, попробуем в другой раз

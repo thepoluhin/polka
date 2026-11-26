@@ -9,7 +9,8 @@ async function run() {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    page.on('pageerror', (err) => console.error(err));
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(err.message));
     const fixture = fs.readFileSync(path.join(__dirname, '../testbooks/Северова - Дом у реки.fb2'));
     const different = Buffer.from(fixture);
     different[different.length - 1] ^= 1;
@@ -64,6 +65,16 @@ async function run() {
     }, { oldId, ambiguousId });
     await page.goto(pathToFileURL(path.resolve(__dirname, '../dist/app/index.html')).href);
     await page.waitForFunction(() => window.__polka?.L.entries.length === 3 && !window.__polka.L.scanning);
+    const cover = await page.evaluate(() => {
+      const encoded = new TextEncoder().encode(
+        '<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info>' +
+        '<book-title>Обложка</book-title><coverpage><image l:href="#cover&amp;v2"/></coverpage>' +
+        '</title-info></description><BINARY id = "cover&amp;v2" content-type = "image/png">AQID</BINARY></FictionBook>'
+      );
+      const meta = window.BookParser.meta('cover.fb2', encoded);
+      return [meta.coverType, Array.from(meta.coverBytes || [])];
+    });
+    assert.deepEqual(cover, ['image/png', [1, 2, 3]]);
     const catalog = () => page.evaluate(() => Object.fromEntries(window.__polka.L.entries.map((e) => [e.path, e.id])));
     const ids = await catalog();
     const id = ids['/books/old.fb2'];
@@ -215,6 +226,93 @@ async function run() {
 
     await page.evaluate((id) => window.__polka.openLink('polka://open?book=' + id + '&ch=2&off=240&len=18'), id);
     assert.ok(await page.locator('.flash-mark').count(), 'An unmarked destination still gets a temporary highlight');
+    await page.evaluate(() => {
+      const app = window.__polka;
+      app.S.cols = 1;
+      app.S.flip = 'turn';
+      const chapters = app.R.book.chapters;
+      chapters[1].html += '<img class="review-decode">';
+      delete chapters[1].typo;
+      const original = HTMLImageElement.prototype.decode;
+      HTMLImageElement.prototype.decode = function () {
+        if (!this.classList.contains('review-decode')) return original.call(this);
+        return new Promise((resolve) => { window.releaseChapterImage = resolve; });
+      };
+    });
+    await page.evaluate(() => window.__polka.goTo(0, { page: Number.MAX_SAFE_INTEGER }));
+    await page.evaluate(() => { window.chapterTurn = window.__polka.next(); });
+    await page.waitForFunction(() => window.releaseChapterImage && window.__polka.R.rendering);
+    assert.ok(await page.locator('.flip-slot.on .fs-vp').first().textContent(), 'The turning leaf keeps the previous chapter');
+    await page.evaluate(async () => {
+      const app = window.__polka;
+      await app.goTo(2, { off: 12, keepOff: true });
+      window.releaseChapterImage();
+      await window.chapterTurn;
+    });
+    assert.deepEqual(await visiblePosition(), { ch: 2, off: 12 });
+    assert.equal(await page.locator('.flip-slot.on').count(), 0);
+
+    await page.evaluate(() => {
+      window.releaseChapterImage = null;
+      window.cancelledRender = window.__polka.goTo(1, { page: 0 });
+    });
+    await page.waitForFunction(() => window.releaseChapterImage && window.__polka.R.rendering);
+    await page.evaluate(async () => {
+      document.getElementById('btn-back').click();
+      window.releaseChapterImage();
+      await window.cancelledRender;
+    });
+    assert.equal(await page.evaluate(() => window.__polka.R.book), null);
+    assert.equal(await page.locator('#flow').textContent(), '');
+
+    await page.evaluate(async (id) => {
+      const app = window.__polka;
+      const entry = app.L.entries.find((item) => item.id === id);
+      await app.openEntry(entry);
+      localStorage.setItem('polka.pads', JSON.stringify({
+        broken: { pages: [null] },
+        [id]: { pages: ['Первый лист', 'Второй лист', ''] },
+      }));
+      await window.__pad.open();
+    }, id);
+    await page.locator('#pad .pad-ta').first().press('Home');
+    await page.locator('#pad .pad-ta').first().press('Backspace');
+    assert.equal(await page.locator('#pad .pad-ta').first().inputValue(), 'Второй лист');
+    assert.equal(await page.locator('#pad .pf-n').textContent(), '2 / 2');
+    const tinyPad = await page.evaluate(() => {
+      const editor = window.__pad.editor();
+      const meter = editor.ta.parentElement.querySelectorAll('.pad-ta')[1];
+      for (const field of [editor.ta, meter]) {
+        Object.defineProperty(field, 'clientHeight', { value: 1 });
+        Object.defineProperty(field, 'scrollHeight', { value: 12 });
+      }
+      editor.ta.value = 'Текст';
+      editor.ta.dispatchEvent(new Event('input'));
+      return editor.pages;
+    });
+    assert.deepEqual(tinyPad, ['Первый лист', 'Текст']);
+    await page.evaluate(() => window.__pad.close());
+
+    const end = await page.evaluate(async () => {
+      const app = window.__polka;
+      await app.goTo(app.R.book.chapters.length - 1, { page: Number.MAX_SAFE_INTEGER });
+      let writes = 0;
+      const original = window.__saveStateSoon;
+      window.__saveStateSoon = () => { writes++; if (original) original(); };
+      await app.next();
+      const saved = JSON.parse(localStorage.getItem('polka.progress'))[app.R.id];
+      return { written: writes > 0, done: saved.done > 0 };
+    });
+    assert.deepEqual(end, { written: true, done: true });
+    await page.evaluate(async () => {
+      const app = window.__polka;
+      const relayout = app.relayout();
+      await app.goTo(0, { page: 0 });
+      await relayout;
+    });
+    await delay(100);
+    assert.ok(await page.locator('#book-end').isHidden());
+    assert.deepEqual(errors, []);
     console.log('Review regressions passed');
   } finally {
     await browser.close();

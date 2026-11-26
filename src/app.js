@@ -14,7 +14,11 @@
     clean: (() => {
       const obj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
       const lists = (o) => { if (!obj(o)) return null; for (const k of Object.keys(o)) { if (Array.isArray(o[k])) o[k] = o[k].filter(obj); else delete o[k]; } return o; };
-      return { quotes: lists, notes: lists, shelves: (l) => l.filter((x) => obj(x) && typeof x.id === 'string' && Array.isArray(x.books)).map((x) => (typeof x.name === 'string' ? x : Object.assign(x, { name: String(x.name == null ? 'Полка' : x.name) }))) };
+      const records = (o, valid) => { for (const k of Object.keys(o)) if (!valid(o[k])) delete o[k]; return o; };
+      return { quotes: lists, notes: lists, bookmarks: lists,
+        progress: (o) => records(o, obj),
+        pads: (o) => records(o, (x) => obj(x) && Array.isArray(x.pages) && x.pages.length > 0 && x.pages.every((pg) => typeof pg === 'string')),
+        shelves: (l) => l.filter((x) => obj(x) && typeof x.id === 'string' && Array.isArray(x.books)).map((x) => (typeof x.name === 'string' ? x : Object.assign(x, { name: String(x.name == null ? 'Полка' : x.name) }))) };
     })(),
     get(k, d) {
       if (k in this.mem) return this.mem[k] == null ? d : this.mem[k];
@@ -35,6 +39,12 @@
         return false;
       }
     },
+  };
+  let idSequence = 0;
+  const newId = (prefix) => {
+    const sequence = (idSequence++).toString(36).padStart(6, '0');
+    const random = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(7, '0');
+    return prefix + Date.now().toString(36) + sequence + random;
   };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
@@ -341,7 +351,7 @@
     return new Promise((res) => { const i = new Image(); i.onload = () => res(avgColor(i, i.naturalWidth, i.naturalHeight)); i.onerror = () => res(null); i.src = src; });
   }
   const genColor = (title) => PALETTE[hash(title) % PALETTE.length][1];
-  const htmlToText = (html, max) => { const d = document.createElement('div'); d.innerHTML = String(html || ''); return (d.textContent || '').replace(/\s+/g, ' ').trim().slice(0, max || 700); };
+  const htmlToText = (html, max) => { const d = document.createElement('template'); d.innerHTML = String(html || ''); return (d.content.textContent || '').replace(/\s+/g, ' ').trim().slice(0, max || 700); };
   // описание и цвет корешка (версия метаданных 2)
   async function metaExtras(m, raw, bytes, e) {
     m.annot = htmlToText(raw.annotation, 700);
@@ -772,7 +782,7 @@
     if (!name) return null;
     const list = shelves();
     let sh = list.find((x) => x.name.toLowerCase() === name.toLowerCase());
-    if (!sh) { sh = { id: 's' + Date.now().toString(36), name, books: [] }; list.push(sh); }
+    if (!sh) { sh = { id: newId('s'), name, books: [] }; list.push(sh); }
     if (bookId && !sh.books.includes(bookId)) sh.books.push(bookId);
     saveShelves(list);
     return sh;
@@ -816,21 +826,28 @@
   const R = {
     book: null, entry: null, id: null,
     ch: 0, page: 0, pages: 1, off: 0,
-    geo: null, nodes: null, domLen: 1, rendering: false,
+    geo: null, nodes: null, domLen: 1, rendering: false, renderToken: 0,
     history: [], previewReturn: null,
   };
   const flow = $('flow'), viewport = $('viewport'), stage = $('stage'), reader = $('reader');
 
   async function openEntry(e, at) {
     if (R.opening) return; // двойной клик не разбирает книгу дважды
-    R.opening = true;
-    try { await openEntryInner(e, at); } finally { R.opening = false; }
+    const opening = R.opening = Symbol();
+    try { await openEntryInner(e, at, opening); }
+    finally {
+      if (R.opening === opening) {
+        document.body.style.cursor = '';
+        R.opening = false;
+      }
+    }
   }
-  async function openEntryInner(e, at) {
+  async function openEntryInner(e, at, opening) {
     const lib = $('library');
     document.body.style.cursor = 'progress';
     try {
       const bytes = await Src.read(e);
+      if (R.opening !== opening) return;
       const book = BookParser.parse(e.name, bytes);
       if (!book.chapters.length) { for (const u of book.urls || []) URL.revokeObjectURL(u); throw new Error('В книге нет текста'); }
       if (R.book) closeBook(true);
@@ -845,35 +862,42 @@
       flow.lang = book.lang || 'ru';
       buildToc();
       soundWarm();
+      const renderToken = R.renderToken;
       if (document.fonts && document.fonts.load) await document.fonts.load(S.size + 'px "' + S.font + '"').catch(() => {});
+      if (R.book !== book || R.renderToken !== renderToken) return;
       if (at && at.ch < book.chapters.length) {
         const resume = pos && pos.ch < book.chapters.length ? pos : { ch: 0, off: 0 };
         startLinkedPreview(at.libraryReturn || { ch: resume.ch, off: resume.off });
-        await renderChapter(at.ch, { off: at.off || 0, keepOff: true });
+        if (!await renderChapter(at.ch, { off: at.off || 0, keepOff: true })) return;
       }
       else {
         const ch = pos && pos.ch < book.chapters.length ? pos.ch : 0;
-        await renderChapter(ch, pos ? { off: pos.off || 0, keepOff: true } : { page: 0 });
+        if (!await renderChapter(ch, pos ? { off: pos.off || 0, keepOff: true } : { page: 0 })) return;
       }
       showUi(true);
       hideUiSoon();
       if (window.__migrateQuotes) window.__migrateQuotes().catch((err) => console.warn(err));
     } catch (err) {
+      if (R.opening !== opening) return;
       console.error(err);
       const msg = String((err && err.message) || err);
       // файл исчез, пока программа была открыта (удалили, переименовали, отключили флешку)
       toast('Не получилось открыть книгу: ' + (/ENOENT|no such file/i.test(msg) ? 'файл не найден — его переместили, переименовали или удалили' : msg.replace(/^Error invoking remote method '[^']*': (Error: )?/, '')));
-    } finally {
-      document.body.style.cursor = '';
     }
   }
 
   function closeBook(silent) {
+    if (!silent && R.opening) {
+      R.opening = false;
+      document.body.style.cursor = '';
+    }
     if (!R.book) return;
     const libraryScroll = R.previewReturn?.scrollTop;
     if (typeof PADE !== 'undefined' && PADE) { PADE.save(); PADE = null; $('pad').hidden = true; reader.classList.remove('pad-on'); $('btn-pad').classList.remove('active'); }
-    finishFlip(); autoStop(); if (R.endShown) hideBookEnd(true);
-    savePos.flush && savePos.flush();
+    dropClones(); autoStop();
+    savePos.flush();
+    if (R.endShown) hideBookEnd(true);
+    R.renderToken++; R.rendering = false;
     // из книги возвращаемся туда, где она теперь стоит: начатая — в «Читаю сейчас»
     if (!silent && libraryScroll == null && !shelves().some((x) => x.id === SH.tab)) {
       const qs = shelves().find((x) => x.quiet && x.books.includes(R.id)); // книга с «тихой» полки — обратно на неё
@@ -1273,15 +1297,18 @@
   }
 
   // ---------- рендер главы ----------
-  async function renderChapter(ch, target) {
+  async function renderChapter(ch, target, flip) {
+    if (!R.book) return false;
     if (!(ch >= 0 && ch < R.book.chapters.length)) { ch = 0; target = { page: 0 }; }
+    savePos.flush();
+    const token = ++R.renderToken;
     R.rendering = true;
-    try { await renderChapterInner(ch, target); }
-    finally { R.rendering = false; }
+    try { return await renderChapterInner(ch, target, token, flip) && R.renderToken === token; }
+    finally { if (R.renderToken === token) R.rendering = false; }
   }
-  async function renderChapterInner(ch, target) {
+  async function renderChapterInner(ch, target, token, flip) {
     if (R.endShown) hideBookEnd(true);
-    if (!FLIP.cur) dropClones();
+    if (!flip) dropClones();
     R.ch = ch;
     const c = R.book.chapters[ch];
     flow.classList.remove('anim');
@@ -1292,6 +1319,7 @@
     R.units = null; R.fxEl = null;
     const imgs = Array.from(flow.querySelectorAll('img'));
     if (imgs.length) await Promise.race([Promise.all(imgs.map((i) => i.decode().catch(() => {}))), sleep(1500)]);
+    if (R.renderToken !== token) return false;
     applyHang();
     countPages();
     buildNodes();
@@ -1315,21 +1343,22 @@
     flow.classList.add('fade');
     R.rendering = false;
     afterMove(target && target.off != null && target.keepOff ? target.off : null);
+    return true;
   }
 
   async function relayout() {
     if (!R.book || R.rendering) return;
     dropClones();
-    if (R.endShown) { hideBookEnd(true); setTimeout(() => showBookEnd(false), 80); }
-    const off = R.off;
+    const off = R.off, token = R.renderToken;
     applyGeo();
     updateChapterNext();
     await sleep(0);
-    if (!R.book || R.rendering || !R.nodes) return; // пока ждали, могла начаться отрисовка другой главы — она сама всё разложит
+    if (!R.book || R.renderToken !== token || R.rendering || !R.nodes) return; // пока ждали, могла начаться отрисовка другой главы — она сама всё разложит
     applyHang();
     countPages();
     showOffset(off);
-    afterMove(off);
+    if (R.endShown) positionBookEnd($('book-end'));
+    else afterMove(off);
   }
 
   function afterMove(keepOff) {
@@ -1421,7 +1450,7 @@
     let t = null;
     const write = () => {
       t = null;
-      if (!R.book || R.previewReturn) return;
+      if (!R.book || R.rendering || R.previewReturn) return;
       const all = progress();
       const was = all[R.id] || {}, pct = R.endShown ? 1 : currentPct();
       // «прочитано» держится, пока книгу не начали заново
@@ -1443,45 +1472,58 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) { savePos.flush(); if (window.__saveStateNow) window.__saveStateNow(); } });
 
   // ---------- листание ----------
-  let busy = false;
+  async function turnChapter(ch, target, dir) {
+    const flip = dir && fancyFlip() ? flipStart(dir) : null;
+    let rendered = false;
+    try {
+      rendered = await renderChapter(ch, target, flip);
+      if (rendered && dir) {
+        if (flip) flip.play(); else turnSound('slide', 0.44);
+      }
+    } finally {
+      if (flip && !rendered) flip.stop();
+    }
+  }
   function scrollStep(dir, amount) {
     const h = viewport.clientHeight;
     viewport.scrollBy({ top: dir * (amount || Math.round(h * 0.88)), behavior: S.anim ? 'smooth' : 'auto' });
   }
   async function next(amount) {
-    if (!R.book || busy) return;
+    if (!R.book || R.rendering || !R.nodes) return;
     readingResumed();
     if (isScroll()) {
       if (!atEnd()) { scrollStep(1, amount); return; }
-      if (R.ch < R.book.chapters.length - 1) { busy = true; await renderChapter(R.ch + 1, { page: 0 }); busy = false; return; }
+      if (R.ch < R.book.chapters.length - 1) { await turnChapter(R.ch + 1, { page: 0 }); return; }
       showBookEnd(); return;
     }
     if (R.endShown) return;
     if (R.page < R.pages - 1) { setPage(R.page + 1, true); afterMove(); return; }
-    if (R.ch < R.book.chapters.length - 1) { busy = true; const f = fancyFlip() && flipStart(1); await renderChapter(R.ch + 1, { page: 0 }); busy = false; if (f) f.play(); else turnSound('slide', 0.44); return; }
+    if (R.ch < R.book.chapters.length - 1) { await turnChapter(R.ch + 1, { page: 0 }, 1); return; }
     showBookEnd(true);
   }
   async function prev(amount) {
-    if (!R.book || busy) return;
+    if (!R.book || R.rendering || !R.nodes) return;
     readingResumed();
     if (R.endShown) { hideBookEnd(); return; }
     if (isScroll()) {
       if (!atStart()) { scrollStep(-1, amount); return; }
-      if (R.ch > 0) { busy = true; await renderChapter(R.ch - 1, 'last'); busy = false; }
+      if (R.ch > 0) await turnChapter(R.ch - 1, 'last');
       return;
     }
     if (R.page > 0) { setPage(R.page - 1, true); afterMove(); return; }
-    if (R.ch > 0) { busy = true; const f = fancyFlip() && flipStart(-1); await renderChapter(R.ch - 1, 'last'); busy = false; if (f) f.play(); else turnSound('slide', 0.44); }
+    if (R.ch > 0) await turnChapter(R.ch - 1, 'last', -1);
   }
   async function goTo(ch, target, remember) {
+    if (!R.book) return false;
+    if (!R.nodes || R.rendering) return renderChapter(ch, target || { page: 0 });
     if (remember) pushHistory();
     if (ch === R.ch && target && target.anchor) {
       const el = document.getElementById(target.anchor);
-      if (el && flow.contains(el)) { showElement(el); afterMove(); return; }
+      if (el && flow.contains(el)) { showElement(el); afterMove(); return true; }
     }
-    if (ch === R.ch && target && target.off != null) { showOffset(target.off); afterMove(target.keepOff ? target.off : null); return; }
-    if (ch === R.ch && target && target.page === 0 && isScroll()) { viewport.scrollTop = 0; afterMove(); return; }
-    await renderChapter(ch, target || { page: 0 });
+    if (ch === R.ch && target && target.off != null) { showOffset(target.off); afterMove(target.keepOff ? target.off : null); return true; }
+    if (ch === R.ch && target && target.page === 0 && isScroll()) { viewport.scrollTop = 0; afterMove(); return true; }
+    return renderChapter(ch, target || { page: 0 });
   }
 
   // кнопка в конце главы (только в ленте)
@@ -1615,7 +1657,7 @@
         flipPrepare();
       },
       play() {
-        FLIP.cur = ctl;
+        if (stopped) return;
         const k = quick ? 0.62 : 1;
         turnSound(S.flip === 'curl' ? 'curl' : 'turn', (S.flip === 'curl' ? 760 : 660) * k / 1000);
         if (S.flip === 'curl') curl = playCurl(leaf, reg, lx, half, dir, paper, 760 * k, (id) => { raf = id; }, () => ctl.stop());
@@ -1628,6 +1670,7 @@
         anims.forEach((a) => { a.pause(); a.currentTime = f * a.effect.getComputedTiming().duration; });
       },
     };
+    FLIP.cur = ctl;
     return ctl;
   }
   const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -1832,13 +1875,17 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden && autoOn()) autoSchedule(); });
 
   // ---------- последняя страница: «Книга прочитана» и впечатление о книге ----------
-  function showBookEnd(turn) {
-    if (!R.book || R.endShown) return;
-    const f = turn && fancyFlip() ? flipStart(1) : null;
-    const el = $('book-end'), vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  function positionBookEnd(el) {
+    const vr = viewport.getBoundingClientRect(), sr = stage.getBoundingClientRect();
     // чуть шире колонки текста — висячие кавычки выходят на поля, их тоже закрываем
     el.style.left = (vr.left - sr.left - 34) + 'px'; el.style.width = vr.width + 68 + 'px';
     el.style.top = (vr.top - sr.top - 4) + 'px'; el.style.height = vr.height + 8 + 'px';
+  }
+  function showBookEnd(turn) {
+    if (!R.book || R.endShown) return;
+    const f = turn && fancyFlip() ? flipStart(1) : null;
+    const el = $('book-end');
+    positionBookEnd(el);
     const n = allItems().length;
     $('be-title').textContent = R.book.title || R.entry.name.replace(BOOK_RE, '');
     $('be-author').textContent = R.book.authors.join(', ');
@@ -1851,6 +1898,7 @@
     if (!R.previewReturn) {
       // книга прочитана: место — самый конец
       const all = progress(); all[R.id] = Object.assign({}, all[R.id], { ch: R.ch, off: R.off, pct: 1, t: Date.now(), done: Date.now() }); LS.set('progress', all);
+      if (window.__saveStateSoon) window.__saveStateSoon();
     }
   }
   function hideBookEnd(quiet) {
@@ -2080,7 +2128,7 @@
         pill.disabled = true;
         try {
           if (R.endShown) hideBookEnd(true);
-          await goTo(h.ch, { off: h.off, keepOff: true });
+          if (!await goTo(h.ch, { off: h.off, keepOff: true })) return;
           if (h === R.previewReturn) {
             R.previewReturn = null;
             savePos();
@@ -2291,7 +2339,9 @@
     toast('Совпадение ' + (i + 1) + ' из ' + res.length + (res.length >= 5000 ? '+' : '') + ' · F3 — следующее, Shift+F3 — предыдущее');
   }
   async function gotoSearchResult(r) {
-    if (r.ch !== R.ch) await goTo(r.ch, { page: 0 });
+    if (!R.book) return;
+    if ((r.ch !== R.ch || R.rendering || !R.nodes) && !await goTo(r.ch, { page: 0 })) return;
+    if (!R.searchQ) return;
     // текст главы так, как он сейчас на экране (с теми же смещениями, что у закладок и позиции)
     let dom = '';
     const tw = document.createTreeWalker(flow, NodeFilter.SHOW_TEXT);
@@ -3222,10 +3272,16 @@
     if (books) {
       const res = native.diaryDir ? await native.diaryDir(books) : native.quotesDefaultDir ? { dir: await native.quotesDefaultDir(books) } : { dir: null };
       if (res.renamed) {
-        // пути к файлам цитат указывают на старую папку — поправим
-        const all = allQuotes();
-        for (const k of Object.keys(all)) for (const q of all[k]) if (q.file && q.file.startsWith(res.old)) q.file = res.dir + q.file.slice(res.old.length);
-        LS.set('quotes', all);
+        const movePath = (p) => typeof p === 'string' && p.startsWith(res.old) && /^[\\/]/.test(p.slice(res.old.length))
+          ? res.dir + p.slice(res.old.length) : p;
+        for (const store of ['quotes', 'notes']) {
+          const all = LS.get(store, {});
+          for (const items of Object.values(all)) for (const it of items) if (it.file) it.file = movePath(it.file);
+          LS.set(store, all);
+        }
+        const paths = LS.get('notePaths', {});
+        for (const id of Object.keys(paths)) paths[id] = movePath(paths[id]);
+        LS.set('notePaths', paths);
         toast('Папка «Цитаты» переименована в «Читательский дневник».', 5000);
       } else if (res.kept && !R.keptWarned) {
         R.keptWarned = true;
@@ -3445,7 +3501,6 @@
     setupGraph();
     return p;
   });
-  const writeQuote = (q) => writeItem(Object.assign({ kind: 'quote' }, q));
   // теги — только в последней строке блока, остальное (в т.ч. правки в Obsidian) не трогаем
   const writeItemTags = (it, ctx) => serial(async () => {
     if (!it.file) return;
@@ -3514,9 +3569,11 @@
   // • записи одноимённой книги, попавшие в чужую заметку (прошлые версии), переезжают в свою.
   async function syncBook() {
     if (!native || !R.book) return;
+    const book = R.book, ctx = noteCtx();
     await runPendingDeletes();
-    const ctx = noteCtx();
+    if (R.book !== book) return;
     const p = await bookNotePath(ctx, false);
+    if (R.book !== book) return;
     let changed = 0, restored = 0, removed = 0;
     const lists = { quote: bookQuotes(), note: bookNotes() };
     if (p) {
@@ -3525,6 +3582,7 @@
       // заметка автора: ссылка на эту книгу есть и не испорчена
       const dir = await quotesDirQuiet();
       if (dir) await serial(() => ensureAuthorNote(dir, linkName(ctx.author), baseName(p)));
+      if (R.book !== book) return;
       const lines = md.split('\n');
       const ids = new Set();
       for (const kind of ['quote', 'note']) {
@@ -3577,17 +3635,20 @@
       for (const kind of ['quote', 'note']) for (const it of lists[kind]) {
         if (own || !it.file || !it.v2) continue;
         const md = await native.noteRead(it.file);
+        if (R.book !== book) return;
         if (md != null && !noteBelongs(md, ctx.id)) own = await bookNotePath(ctx, true);
       }
     }
+    if (R.book !== book) return;
     const strays = [];
     for (const kind of ['quote', 'note']) for (const it of lists[kind]) if (it.file && own && baseName(it.file) !== baseName(own) && it.v2) strays.push(Object.assign({ kind }, it));
     lists.quote.sort((a, b) => a.ch - b.ch || a.off - b.off); lists.note.sort((a, b) => a.ch - b.ch || a.off - b.off);
     setBookQuotes(lists.quote); setBookNotes(lists.note);
     for (const it of strays) {
       const old = it.file;
-      const np = await writeItem(it, noteCtx(), ['tags', 'note', 'body']);
-      if (np) { updateItem(it.kind, it.id, { file: np }); await removeItemBlock(old, it.id); }
+      const np = await writeItem(it, ctx, ['tags', 'note', 'body']);
+      if (np) { markItemExported(ctx.id, it.kind, it.id, np); await removeItemBlock(old, it.id); }
+      if (R.book !== book) return;
     }
     if (changed || restored || removed || strays.length) {
       paintQuotes(); refreshLists(); // молча: дневник — встроенная часть программы
@@ -3608,41 +3669,49 @@
   // переезд со старой схемы «файл на цитату» (при открытии книги)
   async function migrateQuotes() {
     if (!native || !R.book) return;
+    const book = R.book, ctx = noteCtx();
     await tidyNotes();
+    if (R.book !== book) return;
     const old = bookQuotes().filter((q) => q.file && !q.v2);
     if (old.length) {
       const dir = await quotesDir();
-      const oldName = linkName(bookAuthor() + ' — ' + bookTitle());
+      if (R.book !== book) return;
+      const oldName = linkName(ctx.author + ' — ' + ctx.title);
       for (const q of old) {
         const md = await native.noteRead(q.file);
-        if (md && /\npolka: "polka:/.test(md)) await native.noteDelete(q.file);
-        const p = await writeQuote(q);
-        updateQuote(q.id, { file: p, v2: true });
+        const p = await writeItem(Object.assign({ kind: 'quote' }, q), ctx);
+        if (p) {
+          markItemExported(ctx.id, 'quote', q.id, p);
+          if (p !== q.file && md && /\npolka: "polka:/.test(md)) await native.noteDelete(q.file);
+        }
+        if (R.book !== book) return;
       }
       if (dir) {
         const hub = await native.noteResolve({ dir, sub: ['Книги'], name: oldName });
         const hmd = hub && await native.noteRead(hub);
-        if (hmd && !hmd.includes('[!quote]') && /tags:\n {2}- книга/.test(hmd) && oldName !== linkName(bookTitle())) await native.noteDelete(hub);
+        if (hmd && !hmd.includes('[!quote]') && /tags:\n {2}- книга/.test(hmd) && oldName !== linkName(ctx.title)) await native.noteDelete(hub);
         await native.noteRmdir({ dir, sub: [oldName] });
       }
     }
-    const ctx = noteCtx();
+    if (R.book !== book) return;
     if (ctx.items.some((it) => it.pendingDiary) && await quotesDirQuiet()) {
       for (const it of ctx.items.filter((it) => it.pendingDiary)) {
         const p = await writeItem(it, ctx);
         if (p) markItemExported(ctx.id, it.kind, it.id, p);
       }
-      if (R.id !== ctx.id) return;
+      if (R.book !== book) return;
     }
     await syncBook();
+    if (R.book !== book) return;
     await syncPadFromDiary().catch((e) => console.warn(e));
   }
   // заметки прошлых версий: убрать метки «^q…», служебные теги #книга/#автор → «тип»
   async function tidyNotes() {
     const files = Array.from(new Set(bookQuotes().filter((q) => q.file && q.v2).map((q) => q.file)));
     if (!files.length) return;
+    const author = bookAuthor();
     const dir = await quotesDirQuiet();
-    if (dir) files.push(await native.noteResolve({ dir, sub: ['Авторы'], name: linkName(bookAuthor()) }));
+    if (dir) files.push(await native.noteResolve({ dir, sub: ['Авторы'], name: linkName(author) }));
     for (const f of files) await serial(async () => {
       const md = await native.noteRead(f);
       if (md == null) return;
@@ -3702,7 +3771,7 @@
 
   async function saveItem(kind, s, tags, body) {
     const ctx = noteCtx();
-    const it = { id: (kind === 'note' ? 'n' : 'q') + Date.now().toString(36), ch: R.ch, off: s.off, len: s.len, text: s.text,
+    const it = { id: newId(kind === 'note' ? 'n' : 'q'), ch: R.ch, off: s.off, len: s.len, text: s.text,
       chapter: (R.tocCurrent && R.tocCurrent.title !== R.book.title && R.tocCurrent.title) || '', pct: currentPct(), tags: tags || [], t: Date.now(), pendingDiary: !!native };
     if (kind === 'note') it.body = body || ''; else if (body && body.trim()) it.note = body.trim();
     const list = kind === 'note' ? bookNotes() : bookQuotes();
@@ -3882,12 +3951,17 @@
         const patch = kind === 'note' ? { body } : { note: body.trim() || undefined };
         const it = updateItem(kind, pop.id, patch);
         pop.body0 = body;
-        if (native && it && it.file) {
+        let status = 'Сохранено';
+        if (native && it) {
           // другие правки этого блока, сделанные в Obsidian, сохраняются — меняем только мысль
-          await writeItem(it, noteCtx(), [kind === 'note' ? 'body' : 'note']);
-          updateItem(kind, it.id, { tags: it.tags, text: it.text });
+          const ctx = noteCtx();
+          const file = await writeItem(it, ctx, [kind === 'note' ? 'body' : 'note']);
+          if (file) {
+            markItemExported(ctx.id, kind, it.id, file);
+            if (R.id === ctx.id && R.book) updateItem(kind, it.id, { tags: it.tags, text: it.text });
+          } else status = 'Сохранено в книге (папка не выбрана)';
         }
-        $('qp-status').textContent = 'Сохранено';
+        $('qp-status').textContent = status;
         paintQuotes();
       }
     } catch (err) {
@@ -4730,11 +4804,11 @@
   // при открытии книги: правки блокнота, сделанные в файле дневника, подтягиваем
   async function syncPadFromDiary() {
     if (!native || !R.book) return;
-    const ctx = noteCtx();
+    const book = R.book, ctx = noteCtx();
     const p = await bookNotePath(ctx, false);
-    if (!p) return;
+    if (!p || R.book !== book) return;
     const md = await native.noteRead(p);
-    if (md == null || R.id !== ctx.id) return;
+    if (md == null || R.book !== book) return;
     const lines = md.split('\n'), r = padRange(lines);
     if (!r) return;
     const text = lines.slice(r.at + 1, r.e).join('\n').trim();
@@ -4763,8 +4837,8 @@
     const ta = host.querySelector('.pad-ta'), folio = host.querySelector('.pad-folio');
     ta.value = E.pages[0]; // первый show() сохраняет поле в текущий лист — поле должно быть заполнено
     const commit = () => { E.pages[E.cur] = ta.value; };
-    const show = (i, caret) => {
-      commit();
+    const show = (i, caret, saveCurrent = true) => {
+      if (saveCurrent) commit();
       E.cur = Math.max(0, Math.min(E.pages.length - 1, i));
       ta.value = E.pages[E.cur];
       const n = E.pages.length;
@@ -4802,6 +4876,7 @@
       commit();
       for (let i = E.cur; i < E.pages.length; i++) {
         const [head, tail] = split(E.pages[i]);
+        if (!head && tail) break; // даже один символ не помещается
         if (!tail) continue;
         E.pages[i] = head;
         if (i === E.pages.length - 1) E.pages.push('');
@@ -4829,7 +4904,7 @@
       // Backspace в начале листа — к концу предыдущего
       if (ev.key === 'Backspace' && E.cur > 0 && ta.selectionStart === 0 && ta.selectionEnd === 0) {
         ev.preventDefault();
-        if (!ta.value.trim()) { E.pages.splice(E.cur, 1); E.cur = Math.min(E.cur, E.pages.length - 1); ta.value = E.pages[E.cur]; show(E.cur - 1 >= 0 ? E.cur - 1 + 0 : 0, -1); saveSoon(); return; }
+        if (!ta.value.trim()) { E.pages.splice(E.cur, 1); show(E.cur - 1, -1, false); saveSoon(); return; }
         show(E.cur - 1, -1); return;
       }
       if (ev.key === 'PageDown' || (ev.ctrlKey && ev.key === 'ArrowRight' && ev.altKey)) { ev.preventDefault(); if (E.cur < E.pages.length - 1) show(E.cur + 1, 0); }
@@ -4862,8 +4937,9 @@
     closePanels();
     $('pad').hidden = false; reader.classList.add('pad-on'); $('btn-pad').classList.add('active');
     PADE = padEditor($('pad-sheet'), R.id, { onEscape: () => closePad() });
+    const editor = PADE;
     await relayout();
-    PADE.focusEnd();
+    if (PADE === editor) editor.focusEnd();
   }
   async function closePad() {
     if (!padOpen()) return;
