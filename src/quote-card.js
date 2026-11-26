@@ -54,12 +54,19 @@
     return { top, bottom };
   }
 
-  function fit(ctx, text, { width, height, max, min, leading, family, color, bold, measureInk }) {
+  function fit(ctx, text, { width, height, max, min, leading, family, color, bold, measureInk, truncate }) {
     for (let size = max; size >= min; size -= 1) {
       const font = (bold ? '700 ' : '') + size + 'px ' + family;
       ctx.font = font;
       const lines = wrap(ctx, text, width);
       const step = size * leading;
+      if (truncate && size - 1 < min && (lines.length - 1) * step + size > height) {
+        lines.length = Math.floor((height - size) / step) + 1;
+        const last = lines.length - 1;
+        const segments = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(lines[last].trimEnd()), ({ segment }) => segment);
+        while (segments.length && ctx.measureText(segments.join('') + '…').width > width) segments.pop();
+        lines[last] = segments.join('').trimEnd() + '…';
+      }
       const ink = measureInk ? inkBounds(ctx, lines, step) : null;
       const used = ink ? ink.bottom - ink.top : (lines.length - 1) * step + size;
       if (Number.isFinite(used) && used <= height) return { lines, step, size, used, font, color, ink };
@@ -101,8 +108,8 @@
       ctx.strokeRect(x + 13, y + 13, w - 26, h - 26);
       ctx.strokeStyle = '#ecd6b34d';
       ctx.strokeRect(x + 17, y + 17, w - 34, h - 34);
-      const authorLayout = fit(ctx, author.toLocaleUpperCase('ru'), { width: 191, height: 44, max: 12, min: 7, leading: 1.2, family: SERIF, color: '#ecd6b3' });
-      const titleLayout = fit(ctx, title, { width: 194, height: 154, max: 29, min: 10, leading: 1.15, family: SERIF, color: '#f4e1c5', bold: true });
+      const authorLayout = fit(ctx, author.toLocaleUpperCase('ru'), { width: 191, height: 44, max: 12, min: 7, leading: 1.2, family: SERIF, color: '#ecd6b3', truncate: true });
+      const titleLayout = fit(ctx, title, { width: 194, height: 154, max: 29, min: 10, leading: 1.15, family: SERIF, color: '#f4e1c5', bold: true, truncate: true });
       if (authorLayout) drawText(ctx, authorLayout, x + w / 2, y + 53, 'center');
       if (titleLayout) drawText(ctx, titleLayout, x + w / 2, y + 160 - titleLayout.used / 2, 'center');
       ctx.strokeStyle = '#ecd6b3a6';
@@ -135,9 +142,8 @@
     if (!quoteLayout) throw new Error('Цитата слишком длинная для карточки. Выберите фрагмент короче.');
     drawText(ctx, quoteLayout, 112, QUOTE_CENTER_Y - quoteLayout.used / 2);
     drawCover(ctx, coverImage, title, author);
-    const titleLayout = fit(ctx, title, { width: 500, height: 68, max: 42, min: 18, leading: 1.07, family: SERIF, color: INK, bold: true });
-    const authorLayout = fit(ctx, author, { width: 470, height: 36, max: 28, min: 12, leading: 1.1, family: SANS, color: '#71604e' });
-    if (!titleLayout || !authorLayout) throw new Error('Название книги или имя автора слишком длинное для карточки.');
+    const titleLayout = fit(ctx, title, { width: 500, height: 68, max: 42, min: 18, leading: 1.07, family: SERIF, color: INK, bold: true, truncate: true });
+    const authorLayout = fit(ctx, author, { width: 470, height: 36, max: 28, min: 12, leading: 1.1, family: SANS, color: '#71604e', truncate: true });
     drawText(ctx, titleLayout, 412, 880);
     drawText(ctx, authorLayout, 412, 890 + titleLayout.used);
     return new Promise((resolve, reject) => {

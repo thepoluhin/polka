@@ -248,14 +248,15 @@
     if (!doc) return meta;
     fillFb2Meta(doc.documentElement, meta);
     if (meta.coverId) {
-      const re = new RegExp('<binary[^>]*id=["\']' + meta.coverId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '["\'][^>]*>([\\s\\S]*?)</binary>');
-      const bm = text.match(re);
-      if (bm) {
+      const binaries = /<binary(?=\s)((?:[^"'<>]|"[^"]*"|'[^']*')*)>([^<]*)<\/binary\s*>/gi;
+      for (const [, attributes, data] of text.matchAll(binaries)) {
+        const binary = parseXml('<binary' + fixEntities(attributes) + '/>')?.documentElement;
+        if (binary?.getAttribute('id') !== meta.coverId) continue;
         try {
-          meta.coverBytes = b64ToBytes(bm[1]);
-          const ct = bm[0].match(/content-type=["']([^"']+)/);
-          meta.coverType = ct ? ct[1] : 'image/jpeg';
+          meta.coverBytes = b64ToBytes(data);
+          meta.coverType = binary.getAttribute('content-type') || 'image/jpeg';
         } catch (e) { /* битая картинка */ }
+        break;
       }
     }
     return meta;
@@ -335,13 +336,14 @@
         return inline ? '<img class="inline" src="' + src + '" alt="' + alt + '">' : '<div class="img"' + idAttr(n, ctx) + '><img src="' + src + '" alt="' + alt + '"></div>';
       }
       case 'a': {
-        const href = getHref(n);
+        const href = getHref(n).trim();
         const inner = fb2Inner(n, ctx);
         if (href.startsWith('#')) {
           const id = href.slice(1);
           const isNote = n.getAttribute('type') === 'note' || (ctx.noteIds && ctx.noteIds.has(id));
           return '<a href="#" class="' + (isNote ? 'noteref' : 'internal') + '" data-anchor="' + esc(id) + '">' + inner.replace(/^\s*\[(.*)\]\s*$/, '$1') + '</a>';
         }
+        if (!href || !SAFE_URL.test(href)) return inner;
         return '<a href="' + esc(href) + '" class="external">' + inner + '</a>';
       }
       case 'table': return '<table' + idAttr(n, ctx) + '>' + fb2Inner(n, ctx) + '</table>';
@@ -702,6 +704,7 @@
         if (/^https?:/i.test(s) || !s) { img.remove(); return; }
         if (!/^data:/.test(s)) {
           const u = imgUrl(resolvePath(item.href, s));
+          if (!u) { img.remove(); return; }
           img.setAttributeNS(XLINK, 'xlink:href', u);
           img.setAttribute('href', u);
         }

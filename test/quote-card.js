@@ -152,6 +152,26 @@ async function run() {
     await select(page, 2, 'share');
     await page.waitForFunction(() => document.getElementById('sel-status').textContent.includes('Цитата слишком длинная'));
     assert.ok(await page.locator('#quote-pop').isHidden());
+    const longMetadata = await page.evaluate(async () => {
+      const lines = [];
+      const fillText = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function (str, x, ...rest) {
+        if (x === 412) lines.push(str);
+        return fillText.call(this, str, x, ...rest);
+      };
+      try {
+        const blob = await window.PolkaQuoteCard.render({
+          text: 'Цитата для проверки',
+          title: 'Очень длинное название книги '.repeat(20),
+          author: 'Имя Фамилия, '.repeat(30),
+          cover: null,
+        });
+        return { type: blob.type, truncatedLines: lines.filter((line) => line.endsWith('…')).length };
+      } finally {
+        CanvasRenderingContext2D.prototype.fillText = fillText;
+      }
+    });
+    assert.deepEqual(longMetadata, { type: 'image/png', truncatedLines: 2 });
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

@@ -1,5 +1,6 @@
 // Автотест: подменяем нативный API (как в Electron) и прогоняем сценарии
 const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
 const fs = require('fs'), path = require('path');
 const { pathToFileURL } = require('node:url');
 const OUT = process.argv[2] || path.join(require('os').tmpdir(), 'polka-shots');
@@ -38,6 +39,7 @@ function scan(d) { let o = []; for (const it of fs.readdirSync(d, { withFileType
   await page.waitForTimeout(700);
   await page.screenshot({ path: OUT + '/03-fb2-cover.png' });
   const info = await page.evaluate(() => { const R = window.__polka.R; return { chapters: R.book.chapters.map((c) => c.title + ' [' + c.len + ']'), toc: R.book.toc.map((t) => '  '.repeat(t.depth) + t.title + ' -> ch' + t.ch + (t.anchor ? '#' + t.anchor : '')), notes: Object.keys(R.book.notes).length, pages: R.pages, cols: R.geo.cols }; });
+  assert.ok(info.chapters.length > 1 && info.toc.length > 1 && info.notes > 0, 'FB2 содержит главы, оглавление и сноски');
   console.log(JSON.stringify(info, null, 1));
   for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(500); }
   await page.mouse.move(700, 450);
@@ -127,6 +129,6 @@ function scan(d) { let o = []; for (const it of fs.readdirSync(d, { withFileType
   await page.keyboard.press('Escape'); await page.waitForTimeout(300);
   await page.setViewportSize({ width: 420, height: 860 }); await page.waitForTimeout(300);
   await page.screenshot({ path: OUT + '/17-narrow.png' });
-  console.log('ERRORS:\n' + errors.join('\n'));
   await browser.close();
+  assert.deepEqual(errors, [], 'Ошибки и предупреждения во время чтения');
 })().catch((e) => { console.error('FAIL', e); process.exit(1); });
