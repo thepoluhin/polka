@@ -83,7 +83,7 @@
 | <kbd>←</kbd> <kbd>→</kbd> | листать |
 | <kbd>T</kbd> | оглавление, закладки, цитаты и впечатление о книге |
 | <kbd>B</kbd> | закладка |
-| <kbd>N</kbd> · <kbd>Ctrl</kbd>+<kbd>N</kbd> | блокнот к книге |
+| <kbd>N</kbd> · <kbd>Ctrl</kbd>+<kbd>N</kbd> | открыть блокнот · открыть или закрыть блокнот |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> · <kbd>F3</kbd> | поиск по книге |
 | <kbd>Ctrl</kbd>+<kbd>+</kbd> · <kbd>Ctrl</kbd>+<kbd>−</kbd> | крупнее · мельче |
 | <kbd>F</kbd> · <kbd>F11</kbd> | полный экран |

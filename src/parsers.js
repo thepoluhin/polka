@@ -309,8 +309,9 @@
       case 'p': {
         const inner = fb2Inner(n, ctx);
         const id = idAttr(n, ctx);
-        if (inner.length < LONG_P || textLenOf(inner) < LONG_P) return '<p' + id + '>' + inner + '</p>';
-        return splitLongPara(inner).map((part, k) => (k ? '<p class="cont">' : '<p' + id + '>') + part + '</p>').join('');
+        const caption = n.getAttribute('id')?.startsWith('guide-caption-') ? ' class="guide-caption"' : '';
+        if (inner.length < LONG_P || textLenOf(inner) < LONG_P) return '<p' + caption + id + '>' + inner + '</p>';
+        return splitLongPara(inner).map((part, k) => (k ? '<p class="cont">' : '<p' + caption + id + '>') + part + '</p>').join('');
       }
       case 'emphasis': return '<em>' + fb2Inner(n, ctx) + '</em>';
       case 'strong': return '<strong>' + fb2Inner(n, ctx) + '</strong>';
@@ -339,7 +340,8 @@
         if (!src) return '';
         const alt = esc(n.getAttribute('alt') || '');
         const inline = n.parentNode && ['p', 'v', 'subtitle', 'emphasis', 'strong', 'td', 'th', 'text-author'].includes(n.parentNode.localName);
-        return inline ? '<img class="inline" src="' + src + '" alt="' + alt + '">' : '<div class="img"' + idAttr(n, ctx) + '><img src="' + src + '" alt="' + alt + '"></div>';
+        const figure = n.getAttribute('id')?.startsWith('guide-picture-') ? 'img guide-picture' : 'img';
+        return inline ? '<img class="inline" src="' + src + '" alt="' + alt + '">' : '<div class="' + figure + '"' + idAttr(n, ctx) + '><img src="' + src + '" alt="' + alt + '"></div>';
       }
       case 'a': {
         const href = getHref(n).trim();

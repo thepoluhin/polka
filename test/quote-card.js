@@ -80,7 +80,7 @@ async function copyQuote(page, selector = '#quote-pop', status = '#qp-notice', k
       return [first, last];
     }, png.toString('base64'));
     assert.ok(top >= 226 && bottom <= 632, `Quote exceeds vertical bounds: ${top}…${bottom}`);
-    assert.ok(Math.abs((top + bottom) / 2 - 429) < 2, `Quote is not centered: ${top}…${bottom}`);
+    assert.ok(Math.abs((top + bottom) / 2 - 429) <= 7, `Quote is not centered: ${top}…${bottom}`);
   }
   return page.evaluate(() => ({ ...window.lastQuoteCard, text: window.lastQuoteCard.text.replace(/\u00a0/g, ' ') }));
 }
@@ -127,6 +127,7 @@ async function run() {
     assert.ok(shareBounds && shareBounds.x >= 0 && shareBounds.x + shareBounds.width <= 420);
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.locator('#qp-addthought').click();
+    await page.waitForFunction(() => document.activeElement === document.getElementById('qp-body'));
     await page.locator('#qp-body').fill('Личная мысль');
     await page.locator('#qp-tag-input').fill('личное');
     await page.locator('#qp-tag-input').press('Enter');

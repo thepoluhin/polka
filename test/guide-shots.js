@@ -185,8 +185,15 @@ async function main() {
     };
 
     await setup(page);
+    await page.evaluate(() => {
+      window.shelf.saveQuotePng = async ({ bytes }) => {
+        window.guideQuotePng = Array.from(bytes);
+        return true;
+      };
+    });
     await page.locator('.sh-tab[data-shelf="reading"]').click();
     await page.locator('.rm-card').nth(1).waitFor();
+    await page.mouse.move(4, 4);
     await shot('01b-opisanie');
     await page.locator('#lib-tabs [data-view="notebook"]').click();
     await page.locator('.nb-card').nth(2).waitFor();
@@ -221,8 +228,14 @@ async function main() {
     await page.locator('#qp-body').fill('Отметить, как меняется тишина перед разговором.');
     await shot('05-citata');
     await page.locator('#qp-export').click();
-    await page.getByText('Карточка сохранена', { exact: true }).waitFor();
-    await shot('05-delyatsya');
+    await page.waitForFunction(() => window.guideQuotePng?.length > 24 && !document.getElementById('qp-export').disabled);
+    assert.equal(await page.locator('#qp-notice').textContent(), '');
+    const quotePng = Buffer.from(await page.evaluate(() => window.guideQuotePng));
+    const cardPreview = await browser.newPage({ viewport: page.viewportSize(), deviceScaleFactor: 1 });
+    await cardPreview.setContent('<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#e9e3d7}img{height:720px;max-width:100%;object-fit:contain;box-shadow:0 12px 36px #43352144}</style><img alt="Карточка с цитатой" src="data:image/png;base64,' + quotePng.toString('base64') + '">');
+    await cardPreview.locator('img').evaluate((img) => img.decode());
+    await cardPreview.screenshot({ path: path.join(output, '05-delyatsya.jpg'), type: 'jpeg', quality: 90 });
+    await cardPreview.close();
     await page.locator('#qp-close').click();
 
     await openRiver(page, { theme: 'night', cols: 'auto' });
@@ -235,7 +248,11 @@ async function main() {
     await page.locator('#btn-settings').click();
     await page.locator('#set-tabs [data-tab="pad"]').click();
     await page.getByText('Оставлять блокнот открытым', { exact: true }).click();
+    await page.getByRole('button', { name: 'Тёмно-синий сланец', exact: true }).click();
+    await page.getByRole('button', { name: 'Светло-голубые', exact: true }).click();
     await shot('12b-aa-bloknot');
+    await page.getByRole('button', { name: 'Песочный', exact: true }).click();
+    await page.getByRole('button', { name: 'Бордовые', exact: true }).click();
     await page.keyboard.press('Escape');
     await page.evaluate(() => window.__pad.close());
     await page.mouse.move(34, 18);
