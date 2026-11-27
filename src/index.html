@@ -17,7 +17,7 @@
     </div>
     <div class="segmented lib-tabs" id="lib-tabs">
       <button data-view="books" class="active">Книги</button>
-      <button data-view="notebook">Заметки</button>
+      <button data-view="notebook">Цитаты</button>
       <button data-view="pads">Блокноты</button>
     </div>
     <div class="lib-search">
@@ -40,8 +40,6 @@
   <main class="lib-main" id="lib-main">
     <div id="scan-status" class="scan-status" hidden></div>
 
-    <section id="remember" class="remember" hidden></section>
-
     <section id="pads" class="pads" hidden></section>
 
     <section id="notebook" class="notebook" hidden>
@@ -51,6 +49,7 @@
 
     <section id="shelves" class="shelves" hidden>
       <div class="sh-main">
+        <section id="remember" class="remember" hidden></section>
         <div class="sh-head">
           <h2 class="sh-title" id="sh-title"></h2>
           <div class="sh-view" id="sh-view">
@@ -86,7 +85,7 @@
 
 <!-- ============ ЧИТАЛКА ============ -->
 <section id="reader" class="view" hidden>
-  <aside class="pad" id="pad" hidden aria-label="Блокнот"><div class="pad-sheet" id="pad-sheet"></div></aside>
+  <aside class="pad" id="pad" hidden aria-label="Блокнот"><div class="pad-sheet" id="pad-sheet"></div><div id="pad-width-handle" role="separator" aria-label="Ширина блокнота" aria-orientation="vertical" tabindex="0"></div></aside>
   <header class="r-top" id="r-top">
     <button class="icon-btn" id="btn-back" title="В библиотеку (Esc)">
       <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
@@ -127,7 +126,7 @@
         <div class="be-rule"></div>
         <div class="be-q">Что осталось с вами после этой книги?</div>
         <textarea id="be-ta" placeholder="Впечатление о книге…" rows="4"></textarea>
-        <div class="be-row"><button class="link-btn" id="be-lib">В библиотеку</button><button class="link-btn" id="be-notes">Цитаты и заметки</button><button class="qp-save" id="be-save">Сохранить</button></div>
+        <div class="be-row"><button class="link-btn" id="be-lib">В библиотеку</button><button class="link-btn" id="be-notes">Цитаты</button><button class="qp-save" id="be-save">Сохранить</button></div>
         <div class="be-hint">Запишется в читательский дневник, в «Мои мысли о книге»</div>
       </div>
     </div>
@@ -156,8 +155,8 @@
       <div class="segmented small" id="drawer-tabs">
         <button data-tab="toc" class="active">Содержание</button>
         <button data-tab="bookmarks">Закладки</button>
-        <button data-tab="notes">Заметки</button>
         <button data-tab="quotes">Цитаты</button>
+        <button data-tab="impression">О книге</button>
       </div>
     </div>
     <nav class="toc-list" id="toc-list"></nav>
@@ -189,18 +188,22 @@
     <div class="set-tabs" id="set-tabs">
       <button data-tab="text"><svg viewBox="0 0 24 24"><path d="M5 19L11 5h2l6 14M7.5 14h9"/></svg>Текст</button>
       <button data-tab="read"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v16H6.5A2.5 2.5 0 0 0 4 21.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H12v16h5.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg>Чтение</button>
-      <button data-tab="pad" hidden><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></svg>Блокнот</button>
+      <button data-tab="pad"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></svg>Блокнот</button>
     </div>
     <div class="set-pane" data-pane="pad" hidden>
       <div class="set-label" id="pad-font-label">Шрифт блокнота</div>
       <div class="segmented full pad-options" role="group" aria-labelledby="pad-font-label"><button data-pad-setting="font" data-v="book">Как в книге</button><button data-pad-setting="font" data-v="hand">Рукописный</button></div>
+      <div class="pad-size-heading"><label class="set-label" for="set-pad-size">Размер текста</label><output id="pad-size-value" for="set-pad-size"></output></div>
+      <input class="pad-size" id="set-pad-size" type="range" min="12" max="24" step="1" value="16">
       <div class="set-label" id="pad-paper-label">Цвет бумаги</div>
-      <div class="pad-colors" role="group" aria-labelledby="pad-paper-label"></div>
+      <div class="pad-colors" id="pad-paper-colors" role="group" aria-labelledby="pad-paper-label"></div>
+      <div class="set-label" id="pad-ink-label">Цвет чернил</div>
+      <div class="pad-colors pad-inks" id="pad-ink-colors" role="group" aria-labelledby="pad-ink-label"></div>
       <div class="set-label" id="pad-rule-label">Разметка листа</div>
       <div class="segmented full pad-options" role="group" aria-labelledby="pad-rule-label"><button data-pad-setting="rule" data-v="plain">Без разметки</button><button data-pad-setting="rule" data-v="lines">Линейка</button><button data-pad-setting="rule" data-v="dots">Точки</button></div>
       <div class="set-label" id="pad-nav-label">Навигация</div>
       <div class="segmented full pad-options" role="group" aria-labelledby="pad-nav-label"><button data-pad-setting="navigation" data-v="pages">Листание</button><button data-pad-setting="navigation" data-v="scroll">Прокрутка</button></div>
-      <div class="set-toggles"><label class="toggle pad-number-toggle"><input type="checkbox" id="set-pad-numbers"><span></span>Номера листов</label></div>
+      <div class="set-toggles"><label class="toggle pad-number-toggle"><input type="checkbox" id="set-pad-numbers"><span></span>Номера листов</label><label class="toggle pad-number-toggle"><input type="checkbox" id="set-pad-pinned"><span></span>Оставлять блокнот открытым</label></div>
     </div>
     <div class="set-pane" data-pane="text">
       <div class="set-label">Шрифт</div>
@@ -266,8 +269,7 @@
     <button data-act="translate"><svg viewBox="0 0 24 24"><path d="M4 5h9M8.5 3v2M6 5c1 3.5 3.5 6 7 7.5M11 5c-1 3.5-3.5 6.5-7 8"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg>Перевод</button>
     <button data-act="meaning"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/></svg>Значение</button>
     <button data-act="quote"><svg viewBox="0 0 24 24"><path d="M7 7h4v4c0 3-1.5 5-4 6M14 7h4v4c0 3-1.5 5-4 6"/></svg>Цитата</button>
-    <button data-act="note"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>Заметка</button>
-    <button data-act="share" title="Сохранить цитату как PNG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Поделиться</button>
+    <button data-act="share" aria-label="Поделиться" title="Поделиться"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Поделиться</button>
     </div>
     <div class="sel-status" id="sel-status" role="status"></div>
   </div>
@@ -300,7 +302,7 @@
     <div class="qp-foot">
       <button class="link-btn qp-del" id="qp-delete">Удалить цитату</button>
       <button class="link-btn" id="qp-cancel">Отмена</button>
-      <button class="link-btn qp-export" id="qp-export" title="Сохранить цитату как PNG" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Поделиться</button>
+      <button class="link-btn qp-export" id="qp-export" aria-label="Поделиться" title="Поделиться" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Поделиться</button>
       <button class="qp-save" id="qp-save">Сохранить</button>
     </div>
   </div>
@@ -333,7 +335,7 @@
   <div class="set-label">Читательский дневник</div>
   <div class="set-line">
     <span class="set-line-label">Папка</span>
-    <button class="link-btn set-line-val" id="set-qdir" title="Где хранятся цитаты и заметки">—</button>
+    <button class="link-btn set-line-val" id="set-qdir" title="Где хранится читательский дневник">—</button>
   </div>
   <div class="set-line">
     <span class="set-line-label">Теги</span>
@@ -353,7 +355,7 @@
   <button class="ls-help" id="btn-tg"><svg viewBox="0 0 24 24"><path d="M21 4L3 11l6 2.2M21 4l-3 16-6.5-5M21 4L9 13.2v5.3l2.5-3.5"/></svg>Новости и обновления<span class="ls-sub">Telegram</span></button>
   <div class="set-label">Главная</div>
   <div class="set-toggles" style="margin-top:0">
-    <label class="toggle"><input type="checkbox" id="set-remember"><span></span>«Вспомнить» — старая цитата дня</label>
+    <label class="toggle"><input type="checkbox" id="set-remember"><span></span>«Вспомнить» — цитаты из прочитанного</label>
     <label class="toggle"><input type="checkbox" id="set-guide"><span></span>Книга «Как здесь всё устроено» на полке</label>
   </div>
 </div>
@@ -377,7 +379,7 @@
       <div><h1>Как пользоваться Полкой</h1><p>Домашняя читалка: ваши книги, ваш дневник, ничего лишнего.</p></div>
     </div>
     <nav class="help-nav" id="help-nav">
-      <a data-h="h-lib">Библиотека</a><a data-h="h-read">Чтение</a><a data-h="h-aa">Вид и режимы</a><a data-h="h-notes">Цитаты и заметки</a><a data-h="h-diary">Дневник</a><a data-h="h-keys">Клавиши</a><a data-h="h-about">О программе</a>
+      <a data-h="h-lib">Библиотека</a><a data-h="h-read">Чтение</a><a data-h="h-aa">Вид и режимы</a><a data-h="h-notes">Цитаты</a><a data-h="h-diary">Дневник</a><a data-h="h-keys">Клавиши</a><a data-h="h-about">О программе</a>
     </nav>
     <div class="help-body" id="help-body">
       <section id="h-lib"><h2>Библиотека</h2>
@@ -389,13 +391,13 @@
         <p><b>Книги, к которым возвращаетесь всю жизнь</b> — стихи, любимые рассказы. Правый клик по их полке → «Не показывать в „Читаю сейчас“»: книги будут жить только на своей полке и не займут место среди того, что вы читаете сейчас.</p>
         <p><b>Поиск</b> наверху ищет по названию и автору сразу на всех полках. Порядок книг выбирается в шестерёнке.</p>
         <p><b>Вспомнить</b> — раз в день на главной появляется одна из ваших старых цитат. Её можно открыть в книге или попросить другую.</p>
-        <p><b>Заметки</b> — вкладка рядом с «Книгами»: все цитаты и мысли из всех книг, с поиском и тегами. Клик по записи открывает книгу на этом месте.</p>
+        <p><b>Цитаты</b> — вкладка рядом с «Книгами»: сохранённые фрагменты и мысли к ним, с поиском и тегами. Клик по цитате открывает книгу на этом месте. Свободные записи можно вести в «Блокнотах».</p>
         <p><b>Блокноты</b> — третья вкладка: чистые листы, которые вы исписали в книгах. Лист можно открыть, дописать и перейти к книге.</p>
       </section>
       <section id="h-read"><h2>Чтение</h2>
         <p><b>Листать</b> — стрелками <kbd>←</kbd><kbd>→</kbd>, колесом мыши или кликом по полю слева и справа от текста. Перетащить по тексту — выделить.</p>
         <p><b>Панель сверху</b> появляется, когда мышь у верхнего края или по клику в середину страницы: оглавление, закладка, поиск, «Аа», полный экран.</p>
-        <p><b>Оглавление</b> <kbd>T</kbd> — там же вкладки «Закладки», «Заметки» и «Цитаты». <b>Закладка</b> — <kbd>B</kbd>. <b>Блокнот</b> <kbd>N</kbd> — чистый лист для записей справа от книги: кто кому родственник, планы, мысли. Сохраняется сам. Листы переключаются стрелками, как одна длинная страница. Закрыть — <kbd>Esc</kbd>, <kbd>Ctrl</kbd><kbd>N</kbd> или клик по тексту книги. <b>Поиск по книге</b> — <kbd>Ctrl</kbd><kbd>F</kbd>, дальше <kbd>F3</kbd>.</p>
+        <p><b>Оглавление</b> <kbd>T</kbd> — там же вкладки «Закладки», «Цитаты» и «О книге». <b>Закладка</b> — <kbd>B</kbd>. <b>Блокнот</b> <kbd>N</kbd> — чистый лист для записей справа от книги: кто кому родственник, планы, мысли. Сохраняется сам. Листы переключаются стрелками, как одна длинная страница. Закрыть — <kbd>Esc</kbd>, <kbd>Ctrl</kbd><kbd>N</kbd> или клик по тексту книги. <b>Поиск по книге</b> — <kbd>Ctrl</kbd><kbd>F</kbd>, дальше <kbd>F3</kbd>.</p>
         <p><b>Сноски</b> открываются по клику на номер. <b>Иллюстрации</b> — по клику на весь экран, колесо мыши увеличивает.</p>
         <p>Место чтения запоминается само: книга откроется там, где вы остановились.</p>
         <p><b>После последней страницы</b> открывается страница «Книга прочитана» с полем для впечатления: оно сохраняется в дневник, а книга на главной отмечается прочитанной. Листните назад, чтобы вернуться к тексту.</p>
@@ -412,16 +414,16 @@
           <li><b>Не гасить экран во время чтения</b> — в приложении Windows экран остаётся включённым и компьютер не засыпает от бездействия, пока книга открыта в активном окне «Полки».</li>
         </ul>
       </section>
-      <section id="h-notes"><h2>Цитаты и заметки</h2>
-        <p><b>Выделите текст</b> — появится панель «Перевод», «Значение», «Цитата», «Заметка» и «Поделиться».</p>
-        <p><b>Поделиться</b> сохраняет карточку PNG размером 1080 × 1350 прямо из выделения или из окна сохранённой цитаты. На карточке будут отрывок из книги, обложка, название и автор. Мысли и теги остаются в дневнике. Если отрывок целиком не помещается, выделите фрагмент короче.</p>
-        <p>К цитате можно добавить мысль и теги. Сохранённое подчёркнуто в тексте; клик по подчёркиванию открывает запись, значок на полях — заметку.</p>
-        <p>В оглавлении на вкладке «Заметки» есть «О книге» — место для общего впечатления.</p>
+      <section id="h-notes"><h2>Цитаты</h2>
+        <p><b>Выделите текст</b> — появится панель «Перевод», «Значение», «Цитата» и «Поделиться».</p>
+        <p>Значок <b>Поделиться</b> копирует карточку в буфер из выделения или окна цитаты. Вставьте её через <kbd>Ctrl+V</kbd>. На карточке будут отрывок, обложка, название и автор. Мысли и теги остаются в дневнике. Если отрывок целиком не помещается, выделите фрагмент короче.</p>
+        <p>К цитате можно добавить мысль и теги. Сохранённое подчёркнуто в тексте. Клик по подчёркиванию или значку на полях открывает цитату.</p>
+        <p>На вкладке «О книге» можно записать общее впечатление.</p>
         <p>После перехода к записи из оглавления нажмите <b>«Вернуться к чтению»</b>, чтобы продолжить с прежнего места. Если открыли запись из библиотеки, <b>«Вернуться на главную»</b> откроет исходный раздел.</p>
         <p><b>Теги</b> переименовываются и удаляются в шестерёнке на главной.</p>
       </section>
       <section id="h-diary"><h2>Читательский дневник</h2>
-        <p>Все цитаты, заметки и мысли о книгах сохраняются в папку <b>«Читательский дневник»</b> рядом с книгами: по файлу на книгу и на автора, обычным текстом.</p>
+        <p>Цитаты, впечатления о книгах и блокноты сохраняются в папку <b>«Читательский дневник»</b> рядом с книгами: по файлу на книгу и на автора, обычным текстом.</p>
         <p>Эти файлы можно открыть любой программой для заметок или просто прочитать. Правки, сделанные там, Полка подхватит при следующем открытии книги.</p>
         <p>Там же хранится место чтения и закладки, поэтому, если папка синхронизируется (например, через OneDrive), на другом компьютере вы продолжите с того же места.</p>
       </section>

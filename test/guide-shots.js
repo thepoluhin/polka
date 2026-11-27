@@ -1,151 +1,263 @@
-// скриншоты для встроенной книги-путеводителя (src/guide): node test/guide-shots.js <куда> <папка с книгами>
-const { chromium } = require('playwright'); const fs = require('fs'), path = require('path');
-const OUT = process.argv[2], BOOKS = process.argv[3];
-function scan(d) { let o = []; for (const it of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, it.name); if (it.isFile() && /\.fb2$/i.test(it.name)) { const s = fs.statSync(p); o.push({ path: p, name: it.name, size: s.size, mtime: s.mtimeMs }); } } return o; }
-const DAY = 86400000;
-const Q = [
-  ['Толстой', 'Все счастливые семьи похожи друг на друга, каждая несчастливая семья несчастлива по-своему.', ['семья', 'важно'], '', 9],
-  ['Толстой', 'Все смешалось в доме Облонских.', ['семья'], 'Шесть слов — и уже весь дом перед глазами.', 9],
-  ['Пушкин - Капитанская', 'Не приведи бог видеть русский бунт, бессмысленный и беспощадный!', ['история'], '', 21],
-  ['Тургенев - Ася', 'У счастья нет завтрашнего дня; у него нет и вчерашнего; оно не помнит прошедшего, не думает о будущем; у него есть настоящее – и то не день – а мгновенье.', ['счастье', 'важно'], 'Перечитать, когда кажется, что всё впереди.', 30],
-  ['Толстой - Смерть', 'Прошедшая история жизни Ивана Ильича была самая простая и обыкновенная и самая ужасная.', ['жизнь'], '', 14],
-  ['Чехов - Дама', 'И казалось, что еще немного – и решение будет найдено, и тогда начнется новая, прекрасная жизнь; и обоим было ясно, что до конца еще далеко-далеко и что самое сложное и трудное только еще начинается.', ['любовь', 'жизнь'], 'Лучший финал у Чехова: ничего не кончилось.', 3],
+// Кадры встроенного путеводителя: npm run build; node test/guide-shots.js [папка вывода]
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { chromium } = require('playwright');
+
+const root = path.resolve(__dirname, '..');
+const output = path.resolve(process.argv[2] || path.join(root, 'src/guide/img'));
+const app = pathToFileURL(path.join(root, 'dist/app/index.html')).href;
+const books = new Map();
+const day = 24 * 60 * 60 * 1000;
+
+const paragraphs = [
+  'Утром Анна открыла окно и услышала, как под берегом идёт вода. Ночью прошёл дождь, и доски на крыльце стали темнее. В кухне ещё горела лампа.',
+  'На подоконнике лежало письмо. Анна прочитала первую строчку и остановилась. Ей хотелось сначала вспомнить голос, которым эти слова были бы сказаны.',
+  'Из-за поворота показалась лодка. Старик у вёсел не спешил и оглядывался на берег, словно проверял, на месте ли дома. Анна помахала ему ладонью.',
+  'Ветер двигал занавеску. Письмо стало чуть слышно шуршать, и Анна прижала его чашкой. Потом она вышла к реке и просто постояла у воды.',
+  'Чем дольше Анна смотрела на противоположный берег, тем яснее вспоминала прошлое лето. Тогда на пристани ещё стояли зелёные скамейки, а за ними рос высокий шиповник.',
+  'Во дворе кто-то негромко закрыл калитку. Анна различила знакомые шаги, но не обернулась. Ей казалось, что ещё немного тишины ничего у них не отнимет.',
 ];
-(async () => {
-  const b = await chromium.launch(); const page = await b.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1.25 });
-  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-  await page.exposeFunction('__scan', () => scan(BOOKS));
-  await page.exposeFunction('__read', (p) => fs.readFileSync(p).toString('base64'));
-  await page.exposeFunction('__stat', (p) => { try { const s = fs.statSync(p); return { name: path.basename(p), size: s.size, mtime: s.mtimeMs }; } catch (e) { return null; } });
-  await page.exposeFunction('__guide', () => { try { return fs.readFileSync(path.resolve(__dirname, '../src/guide/guide.fb2')).toString('base64'); } catch (e) { return ''; } });
-  await page.addInitScript((dir) => { const gb = async () => { const b = atob(await window.__guide()); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }; window.shelf = { guideStat: async () => { const u = await gb(); return u.length ? { size: u.length } : null; }, guideRead: gb, pickFolder: async () => dir, pickFile: async () => null, scan: () => window.__scan(), stat: (p) => window.__stat(p), read: async (p) => { const b = atob(await window.__read(p)); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }, initialFile: async () => null, initialUrl: async () => null, openExternal() {}, toggleFullscreen() {}, setTheme() {}, onOpenFile() {}, onOpenUrl() {}, diaryDir: async () => ({ dir: null }), noteRead: async () => null, version: async () => '1.11' }; }, BOOKS);
-  await page.goto('file://' + require('path').resolve(__dirname, '../dist/app/index.html'));
-  await page.evaluate(() => { localStorage.setItem('polka.helpHinted', 'true'); localStorage.setItem('polka.settings', JSON.stringify({ theme: 'light', flip: 'turn', sound: 'off', focus: 'off', cols: 'auto' })); });
-  await page.reload();
-  await page.click('#btn-folder-empty');
-  await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length >= 8 && window.__polka.L.entries.every((e) => window.__polka.L.metas[e.id]));
-  await page.waitForTimeout(800);
-  // цитаты — на настоящих местах в тексте
-  const quotes = {}, notes = {};
-  for (const [who, text, tags, note, days] of Q) {
-    const r = await page.evaluate(async ([who, text]) => {
-      const P = window.__polka, e = P.L.entries.find((x) => x.name.startsWith(who));
-      await P.openEntry(e);
-      const norm = (s) => s.replace(/­/g, '').replace(/\s+/g, ' ');
-      const ch = P.R.book.chapters.findIndex((c) => norm(c.html.replace(/<[^>]*>/g, '')).includes(norm(text).slice(0, 40)));
-      await P.goTo(ch, { page: 0 });
-      let dom = ''; const tw = document.createTreeWalker(document.getElementById('flow'), NodeFilter.SHOW_TEXT); let n; while ((n = tw.nextNode())) dom += n.nodeValue.replace(/­/g, '');
-      dom = dom.replace(/\u00a0/g, ' '); const off = dom.indexOf(text.slice(0, 30));
-      const pct = (P.R.book.offsets[ch] + P.R.book.chapters[ch].len * off / Math.max(1, dom.length)) / P.R.book.totalLen;
-      const t = P.R.book.toc.filter((x) => x.ch <= ch).pop();
-      return { id: e.id, ch, off, pct, chapter: t ? t.title : '' };
-    }, [who, text]);
-    if (r.off < 0) { console.log('не нашёл', text.slice(0, 30)); continue; }
-    const it = { id: 'p' + Math.random().toString(36).slice(2, 9), ch: r.ch, off: r.off, len: text.length, text, chapter: r.chapter, pct: r.pct, tags, t: Date.now() - days * DAY };
-    if (note) it.note = note;
-    (quotes[r.id] = quotes[r.id] || []).push(it);
-  }
-  const ids = await page.evaluate(() => Object.fromEntries(window.__polka.L.entries.filter((e) => e.name.includes(' - ')).map((e) => [e.name.split(' - ')[1].replace('.fb2', ''), e.id])));
-  await page.evaluate(([q, ids]) => {
-    localStorage.setItem('polka.quotes', JSON.stringify(q));
-    localStorage.setItem('polka.bookNotes', JSON.stringify({ [ids['Смерть Ивана Ильича']]: { body: 'Самая страшная и самая светлая книга Толстого. Про то, что жить «как надо» — не то же самое, что жить.', t: Date.now() - 12 * 86400000 } }));
+const opening = 'В этой истории берег встречается с городом, и оба они меняются после дождя.';
+const river = '<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info>' +
+  '<author><first-name>Анна</first-name><last-name>Северова</last-name></author><book-title>Дом у реки</book-title>' +
+  '<annotation><p>' + opening + '</p></annotation><sequence name="Речные истории" number="1"/><lang>ru</lang>' +
+  '</title-info><publish-info><publisher>Пример издательства</publisher><year>2020</year></publish-info></description><body>' +
+  ['Письмо', 'Берег', 'Свет в окне'].map((title, index) =>
+    '<section><title><p>Глава ' + (index + 1) + '. ' + title + '</p></title>' +
+    Array.from({ length: 4 }, () => paragraphs.map(p => '<p>' + p + '</p>').join('')).join('') + '</section>'
+  ).join('') + '</body></FictionBook>';
+books.set('/demo/Северова - Дом у реки.fb2', Buffer.from(river));
+for (const source of ['Morgan - The Lighthouse Keeper.epub', 'Классика/Ильин - Зимние письма.fb2.zip']) {
+  books.set('/demo/' + source, fs.readFileSync(path.join(root, 'testbooks', source)));
+}
+
+async function setup(page) {
+  await page.exposeFunction('guideDemoScan', () => [...books].map(([filename, bytes]) => ({
+    path: filename, name: path.basename(filename), size: bytes.length, mtime: 1,
+  })));
+  await page.exposeFunction('guideDemoRead', (name) => books.get(name).toString('base64'));
+  await page.addInitScript(() => {
+    localStorage.setItem('polka.folder', JSON.stringify('/demo'));
+    localStorage.setItem('polka.helpHinted', 'true');
+    window.shelf = {
+      scan: () => window.guideDemoScan(),
+      read: async (name) => Uint8Array.from(atob(await window.guideDemoRead(name)), (c) => c.charCodeAt(0)),
+      initialFile: async () => null, initialUrl: async () => null, onOpenFile() {}, onOpenUrl() {},
+      setTheme() {}, diaryDir: async () => ({ dir: null }), padClipboardWrite: async ({ image }) => image?.length > 24, saveQuotePng: async ({ bytes }) => bytes?.length > 24,
+    };
+  });
+  await page.goto(app);
+  await ready(page);
+  await page.evaluate(({ paragraphs, day }) => {
+    const { L, S } = window.__polka;
+    const house = L.entries.find(e => e.name.includes('Северова')).id;
+    const letters = L.entries.find(e => e.name.includes('Ильин')).id;
+    const lighthouse = L.entries.find(e => e.name.includes('Morgan')).id;
     const now = Date.now();
-    const pr = {};
-    pr[ids['Дама с собачкой']] = { ch: 2, off: 0, pct: 0.54, t: now - 3600e3, chap: 'II', snip: 'Прошла неделя после знакомства. Был праздничный день. В комнатах было душно, а на улицах вихрем носилась пыль, срывало шляпы. Весь день хотелось пить, и Гуров часто заходил в павильон…' };
-    pr[ids['Анна Каренина']] = { ch: 3, off: 0, pct: 0.12, t: now - 2 * 86400000, chap: 'III', snip: 'Одевшись, Степан Аркадьич прыснул на себя духами, выправил рукава рубашки, привычным движением рассовал по карманам папиросы, бумажник, спички, часы с двойной цепочкой и брелоками…' };
-    pr[ids['Смерть Ивана Ильича']] = { ch: 12, off: 0, pct: 1, t: now - 12 * 86400000, done: now - 12 * 86400000 };
-    localStorage.setItem('polka.progress', JSON.stringify(pr));
-    localStorage.setItem('polka.remember', JSON.stringify({}));
-  }, [quotes, ids]);
-  const shot = (n) => page.screenshot({ path: OUT + '/' + n + '.jpg', type: 'jpeg', quality: 80 });
-  const open = async (title, ch, opt) => { await page.evaluate(async ([title, ch, opt]) => { const P = window.__polka; const e = P.L.entries.find((x) => x.name.includes(title)); if (!P.R.book || P.R.entry.id !== e.id) await P.openEntry(e); await P.goTo(ch, opt || { page: 0 }); }, [title, ch, opt]); await page.waitForTimeout(700); };
-  const set = (o) => page.evaluate((o) => { for (const [k, v] of Object.entries(o)) window.__polka.changeSetting(k, v); }, o);
-  const calm = async () => { await page.mouse.move(640, 420); await page.waitForTimeout(3300); };
-  // 1. библиотека
+    const quotes = {
+      [house]: [
+        { id: 'window', ch: 1, off: 0, len: paragraphs[0].length, text: paragraphs[0], pct: .06, tags: ['начало'], note: 'Вода, доски, лампа — по этим деталям запоминается место.', t: now - 9 * day },
+        { id: 'letter', ch: 1, off: 160, len: paragraphs[1].length, text: paragraphs[1], pct: .12, tags: ['перечитать'], t: now - 5 * day },
+        { id: 'silence', ch: 2, off: 510, len: 97, text: 'Ей казалось, что ещё немного тишины ничего у них не отнимет.', pct: .36, tags: ['тишина'], note: 'Сравнить с последней главой.', t: now - 3 * day },
+      ],
+    };
+    const date = new Date();
+    localStorage.setItem('polka.remember', JSON.stringify({
+      day: [date.getFullYear(), date.getMonth() + 1, date.getDate()].join('-'),
+      keys: [house + '#window', house + '#letter'],
+    }));
+    localStorage.setItem('polka.settings', JSON.stringify({ ...S, theme: 'night', sound: 'off', cols: 'auto', focus: 'off', flip: 'curl' }));
+    localStorage.setItem('polka.quotes', JSON.stringify(quotes));
+    localStorage.setItem('polka.progress', JSON.stringify({
+      [house]: { ch: 1, off: 480, pct: .14, t: now, chap: 'Глава 1. Письмо', snip: paragraphs[1] },
+      [letters]: { ch: 1, off: 65, pct: .08, t: now - day, chap: 'Глава 1', snip: 'Сначала Анна разобрала имя на конверте, потом заметила знакомый почерк.' },
+    }));
+    localStorage.setItem('polka.shelves', JSON.stringify([{ id: 'evening', name: 'На вечер', books: [house, lighthouse] }]));
+    localStorage.setItem('polka.bookNotes', JSON.stringify({ [house]: { body: 'Перечитать главу о письме, когда захочется тишины.', t: now } }));
+    localStorage.setItem('polka.pads', JSON.stringify({
+      [house]: { pages: [
+        'Письмо на подоконнике\n\nАнна прочитала первую строчку. Ей важно вспомнить голос, прежде чем дочитать письмо.',
+        'Кого встретили у реки\n\nАнна — у дома. Старик в лодке — возвращается к пристани.\n\nСравнить сцену с последней главой.',
+        'Что перечитать\n\nПисьмо на подоконнике и разговор у лодки.',
+      ], t: now, title: 'Дом у реки', author: 'Анна Северова' },
+      [letters]: { pages: ['Перечитать зимний разговор у окна.'], t: now - day, title: 'Зимние письма', author: 'Пётр Ильин' },
+    }));
+    localStorage.setItem('polka.padOptions', JSON.stringify({
+      [house]: { paper: 'sand', font: 'hand', ink: 'burgundy', rule: 'lines', navigation: 'pages', numbers: true, size: 16 },
+      [letters]: { paper: 'sage', rule: 'dots' },
+    }));
+  }, { paragraphs, day });
   await page.reload();
-  await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length >= 8);
-  await page.evaluate(() => { const st = JSON.parse(localStorage.getItem('polka.remember') || '{}'); });
-  // «Вспомнить» — пусть будет Тургенев
-  await page.evaluate(() => { const q = JSON.parse(localStorage.getItem('polka.quotes')); for (const [book, list] of Object.entries(q)) for (const it of list) if (it.text.startsWith('У счастья')) localStorage.setItem('polka.remember', JSON.stringify({ day: (() => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); })(), key: book + '#' + it.id, seen: [] })); });
-  await page.reload();
-  await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length >= 8);
-  await page.waitForTimeout(900);
-  await page.click('[data-shview="grid"]'); await page.waitForTimeout(400);
-  await shot('01-polki');
-  await page.click('[data-shview="list"]'); await page.waitForTimeout(400);
-  await shot('01b-opisanie');
-  // полка «Отложенные» с меню книги и своей полкой
-  await page.evaluate((ids) => { localStorage.setItem('polka.shelves', JSON.stringify([{ id: 's1', name: 'На отпуск', books: [ids['Пиковая дама'], ids['Первая любовь']] }])); }, ids);
-  await page.reload();
-  await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length >= 8);
-  await page.waitForTimeout(700);
-  await page.click('.sh-tab[data-shelf="later"]'); await page.waitForTimeout(300);
-  await page.click('#grid .book-card >> nth=2', { button: 'right' }); await page.waitForTimeout(300);
-  await shot('02-menu-knigi');
-  await page.keyboard.press('Escape');
-  // 2. записная книжка
-  await page.click('#lib-tabs [data-view="notebook"]'); await page.waitForTimeout(500);
-  await shot('07-zapisnaya-knizhka');
-  await page.click('#lib-tabs [data-view="books"]');
-  // 3. разворот, сепия — Анна Каренина
-  await set({ theme: 'sepia', cols: 'auto', focus: 'off' });
-  await open('Анна Каренина', 2, { page: 0 }); await calm();
-  await shot('02-razvorot-sepia');
-  // 4. цитата: окошко записи
-  await page.evaluate(() => { const P = window.__polka; const it = JSON.parse(localStorage.getItem('polka.quotes'))[P.R.id].find((x) => x.text.startsWith('Все счастливые')); });
-  const pos = await page.evaluate(() => { const hs = CSS.highlights; for (const [k, h] of hs) { if (!k.startsWith('quote')) continue; for (const r of h) { const rr = r.getClientRects()[0]; if (rr && rr.width > 0) return { x: rr.left + 30, y: rr.top + rr.height / 2 }; } } return null; });
-  if (pos) { await page.mouse.click(pos.x, pos.y); await page.waitForTimeout(500); await shot('05-citata'); await page.keyboard.press('Escape'); }
-  // 5. «Лист», ночь — Дама с собачкой
-  await set({ theme: 'night', focus: 'sheet' });
-  await open('Дама с собачкой', 2, { page: 1 }); await calm();
-  await shot('03-list-noch');
-  // 6. поворот листа — посередине
-  await set({ theme: 'sepia', focus: 'off', cols: 'auto', flip: 'turn' });
-  await open('Капитанская дочка', 2, { page: 1 }); await calm();
-  await page.keyboard.press('ArrowRight'); await page.waitForTimeout(60);
-  await page.evaluate(() => window.__flipSeek(0.28)); await page.waitForTimeout(150); // лист хорошо виден (около середины он стоит ребром)
-  await shot('04-povorot');
-  await page.evaluate(() => window.__flipSeek(1)); await page.waitForTimeout(300);
-  await set({ flip: 'curl' }); await open('Капитанская дочка', 2, { page: 1 }); await calm();
-  await page.keyboard.press('ArrowRight'); await page.waitForTimeout(60);
-  await page.evaluate(() => window.__flipSeek(0.45)); await page.waitForTimeout(150);
-  await shot('04b-zagib');
-  await page.evaluate(() => window.__flipSeek(1)); await set({ flip: 'turn' });
-  // 7. фокус на предложении, сумерки — Ася
-  await set({ theme: 'dusk', focus: 'sent', cols: 'auto' });
-  await open('Ася', 3, { page: 0 }); await page.waitForTimeout(400);
-  for (let i = 0; i < 7; i++) { await page.keyboard.press('ArrowDown'); await page.waitForTimeout(60); }
-  await calm();
-  await shot('06-fokus-predlozhenie');
-  // 8. меню «Аа»
-  await set({ theme: 'light', focus: 'off' });
-  await open('Пиковая дама', 1, { page: 0 }); await page.mouse.move(640, 20); await page.waitForTimeout(300);
-  await page.click('#btn-settings'); await page.waitForTimeout(400);
-  await shot('08-aa-tekst');
-  await page.click('#set-tabs [data-tab="read"]'); await page.waitForTimeout(300);
-  await shot('08b-aa-chtenie');
-  await page.keyboard.press('Escape');
-  // 9. последняя страница
-  await set({ theme: 'sepia', focus: 'sheet' });
-  await page.evaluate(async () => { const P = window.__polka; const e = P.L.entries.find((x) => x.name.includes('Смерть Ивана')); await P.openEntry(e); await P.goTo(P.R.book.chapters.length - 1, 'last'); });
-  await page.waitForTimeout(800); await page.keyboard.press('ArrowRight'); await page.waitForTimeout(400);
-  await page.evaluate(() => window.__flipSeek && window.__flipSeek(1)); await calm();
-  await shot('09-kniga-prochitana');
-  // 10. лента, чёрная тема
-  await page.keyboard.press('ArrowLeft');
-  await set({ theme: 'black', focus: 'off', cols: 'scroll' });
-  await open('Пиковая дама', 2, { page: 0 }); await page.evaluate(() => { document.getElementById('viewport').scrollTop = 420; }); await calm();
-  await shot('10-lenta-chernaya');
-  // 12. блокнот рядом с книгой — Анна Каренина, сепия
-  await page.evaluate((id) => localStorage.setItem('polka.pads', JSON.stringify({ [id]: { pages: ['Облонские: Стива и Долли, пятеро детей.\nАнна — сестра Стивы, замужем за Карениным, сын Серёжа.\nКити — младшая сестра Долли.\nЛевин — давний друг Стивы, влюблён в Кити.\nВронский — граф, офицер. Кити ждёт от него предложения.\n\nПочему Толстой начинает не с Анны, а с чужой ссоры?'], t: Date.now(), title: 'Анна Каренина', author: 'Лев Толстой' } })), ids['Анна Каренина']);
-  await page.reload();
-  await page.waitForFunction(() => !window.__polka.L.scanning && window.__polka.L.entries.length >= 8);
-  await set({ theme: 'sepia', focus: 'off', cols: 'auto' });
-  await open('Анна Каренина', 2, { page: 0 });
-  await page.keyboard.press('KeyN'); await page.waitForTimeout(500);
-  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
-  await page.mouse.move(640, 20); await page.waitForTimeout(400);
-  await shot('12-bloknot');
-  console.log('ошибки:', errs);
-  await b.close();
-})();
+  await ready(page);
+  await page.evaluate(() => {
+    const { L } = window.__polka;
+    const entry = L.entries.find(e => e.name.includes('Северова'));
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ead3ad'; ctx.fillRect(0, 0, 320, 480);
+    ctx.strokeStyle = '#744c37'; ctx.lineWidth = 3; ctx.strokeRect(19, 19, 282, 442);
+    ctx.fillStyle = '#744c37'; ctx.textAlign = 'center';
+    ctx.font = '20px Georgia'; ctx.fillText('Анна Северова', 160, 67);
+    ctx.font = 'bold 32px Georgia'; ctx.fillText('Дом у реки', 160, 408);
+    ctx.fillStyle = '#7c8c79';
+    ctx.beginPath(); ctx.moveTo(44, 279); ctx.quadraticCurveTo(115, 170, 174, 264); ctx.quadraticCurveTo(230, 212, 278, 264); ctx.lineTo(278, 340); ctx.lineTo(44, 340); ctx.fill();
+    ctx.fillStyle = '#526a68';
+    ctx.beginPath(); ctx.moveTo(133, 263); ctx.bezierCurveTo(242, 265, 99, 320, 66, 343); ctx.lineTo(174, 343); ctx.bezierCurveTo(238, 293, 271, 265, 186, 254); ctx.fill();
+    ctx.fillStyle = '#744c37'; ctx.fillRect(76, 209, 53, 44);
+    ctx.beginPath(); ctx.moveTo(65, 213); ctx.lineTo(105, 180); ctx.lineTo(143, 213); ctx.fill();
+    ctx.fillStyle = '#ead3ad'; ctx.fillRect(94, 222, 12, 17);
+    L.metas[entry.id].cover = canvas.toDataURL();
+  });
+}
+
+function ready(page) {
+  return page.waitForFunction(() => {
+    const library = window.__polka?.L;
+    return library && !library.scanning && library.entries.length === 3 && library.entries.every(e => library.metas[e.id]);
+  });
+}
+
+async function openRiver(page, settings = {}) {
+  await page.evaluate(async (settings) => {
+    const polka = window.__polka;
+    for (const [key, value] of Object.entries(settings)) await polka.changeSetting(key, value);
+    const river = polka.L.entries.find(e => e.name.includes('Северова'));
+    if (!polka.R.book || polka.R.entry?.id !== river.id) await polka.openEntry(river);
+    await polka.goTo(1, { page: 0 });
+  }, settings);
+  await page.locator('#flow p').first().waitFor();
+}
+
+async function selectExcerpt(page) {
+  await page.evaluate(() => {
+    const p = document.querySelectorAll('#flow section > p')[2];
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    p.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+  await page.locator('#sel-bar').waitFor();
+}
+
+async function insertIllustration(page) {
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 180;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#e8dabd';
+    ctx.fillRect(0, 0, 320, 180);
+    ctx.lineWidth = 20;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#7a9b9c';
+    ctx.beginPath(); ctx.moveTo(-20, 152); ctx.bezierCurveTo(74, 160, 122, 51, 202, 67); ctx.quadraticCurveTo(260, 96, 344, 30); ctx.stroke();
+    ctx.strokeStyle = '#927f62';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(146, 128, 30, 26);
+    ctx.beginPath(); ctx.moveTo(139, 130); ctx.lineTo(160, 113); ctx.lineTo(182, 130); ctx.stroke();
+    ctx.font = '17px Georgia';
+    ctx.fillStyle = '#514939';
+    ctx.fillText('Дом', 190, 149);
+    ctx.fillText('Река', 227, 74);
+    const editor = window.__pad.editor();
+    editor.ta.setSelectionRange(editor.ta.value.length, editor.ta.value.length);
+    await editor.insertImage(await new Promise(resolve => canvas.toBlob(resolve)), editor.ta);
+  });
+  await page.waitForFunction(() => document.querySelector('#pad-sheet .pad-image img')?.naturalWidth === 320);
+}
+
+async function main() {
+  fs.mkdirSync(output, { recursive: true });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const shot = async (name) => {
+      await page.evaluate(() => document.fonts.ready);
+      await page.screenshot({ path: path.join(output, name + '.jpg'), type: 'jpeg', quality: 90, animations: 'disabled', caret: 'hide' });
+      console.log(name);
+    };
+
+    await setup(page);
+    await page.locator('.sh-tab[data-shelf="reading"]').click();
+    await page.locator('.rm-card').nth(1).waitFor();
+    await shot('01b-opisanie');
+    await page.locator('#lib-tabs [data-view="notebook"]').click();
+    await page.locator('.nb-card').nth(2).waitFor();
+    await shot('07-zapisnaya-knizhka');
+    await page.locator('#lib-tabs [data-view="pads"]').click();
+    await page.locator('.padc').nth(1).waitFor();
+    await shot('12c-katalog-bloknotov');
+
+    await openRiver(page, { theme: 'sepia', cols: '2' });
+    await page.keyboard.press('KeyT');
+    await page.locator('#drawer-tabs [data-tab="impression"]').click();
+    await page.locator('#n-list .bn-card').nth(1).waitFor();
+    await shot('02b-o-knige');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.__pad.open());
+    await page.mouse.move(850, 16);
+    await page.locator('#btn-settings').click();
+    await page.locator('#set-tabs [data-tab="read"]').click();
+    await shot('08b-aa-chtenie');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.__pad.close());
+
+    await openRiver(page, { theme: 'dusk', focus: 'sent' });
+    await page.keyboard.press('ArrowDown');
+    await shot('06-fokus-predlozhenie');
+    await openRiver(page, { theme: 'sepia', focus: 'off', cols: '1' });
+    await selectExcerpt(page);
+    await shot('05-vydelenie');
+    await page.locator('#sel-bar [data-act="quote"]').click();
+    await page.locator('#quote-pop').waitFor();
+    await page.locator('#qp-addthought').click();
+    await page.locator('#qp-body').fill('Отметить, как меняется тишина перед разговором.');
+    await shot('05-citata');
+    await page.locator('#qp-export').click();
+    await page.getByText('Карточка сохранена', { exact: true }).waitFor();
+    await shot('05-delyatsya');
+    await page.locator('#qp-close').click();
+
+    await openRiver(page, { theme: 'night', cols: 'auto' });
+    await page.evaluate(() => window.__pad.open());
+    const previousSheet = page.locator('#pad-sheet .pf-prev');
+    for (let pageIndex = 0; pageIndex < 2 && await previousSheet.isEnabled(); pageIndex++) await previousSheet.click();
+    await insertIllustration(page);
+    await shot('12-bloknot');
+    await page.mouse.move(840, 14);
+    await page.locator('#btn-settings').click();
+    await page.locator('#set-tabs [data-tab="pad"]').click();
+    await page.getByText('Оставлять блокнот открытым', { exact: true }).click();
+    await shot('12b-aa-bloknot');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.__pad.close());
+    await page.mouse.move(34, 18);
+    await page.locator('#btn-back').click();
+    await page.locator('#lib-tabs [data-view="pads"]').click();
+    await page.getByRole('button', { name: /Дом у реки/ }).click();
+    await page.waitForFunction(() => document.querySelector('.pad-cover-leaf img')?.naturalWidth > 0);
+    await shot('12d-razvorot-bloknota');
+
+    await openRiver(page, { theme: 'sepia', cols: '1', flip: 'off' });
+    await page.waitForFunction(() => !window.__polka.R.rendering && window.__polka.R.geo?.cols === 1);
+    await page.evaluate(async () => {
+      const polka = window.__polka;
+      const { R } = polka;
+      await polka.goTo(R.book.chapters.length - 1, 'last');
+      for (let index = 0, limit = R.pages + 1; index < limit && !R.endShown; index++) await polka.next();
+    });
+    await page.locator('#book-end').waitFor();
+    await shot('09-kniga-prochitana');
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

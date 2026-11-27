@@ -30,7 +30,10 @@ const BUILD_DATE = new Date().toLocaleString('ru-RU', { day: 'numeric', month: '
 const SOUNDS = 'window.POLKA_SOUNDS = ' + JSON.stringify(['page'].map((n) => fs.readFileSync(path.join(__dirname, 'src/sounds', n + '.ogg')).toString('base64'))) + ';';
 const quoteBackground = fs.readFileSync(path.join(__dirname, 'src/quote-card-background.svg')).toString('base64');
 const quoteCard = src('quote-card.js').replace('__QUOTE_BACKGROUND__', quoteBackground);
-const scripts = [fflate, fs.readFileSync(path.join(__dirname, 'build/hyph.js'), 'utf8'), src('parsers.js'), src('diary.js'), SOUNDS, quoteCard, src('app.js').replace('__BUILD_DATE__', BUILD_DATE)]
+const notebookCover = fs.readFileSync(path.join(__dirname, 'src/notebook-cover.webp')).toString('base64');
+const notebookWire = fs.readFileSync(path.join(__dirname, 'src/notebook-wire.png')).toString('base64');
+const app = src('app.js').replace('__BUILD_DATE__', BUILD_DATE).replace('__NOTEBOOK_COVER__', notebookCover);
+const scripts = [fflate, fs.readFileSync(path.join(__dirname, 'build/hyph.js'), 'utf8'), src('parsers.js'), src('diary.js'), SOUNDS, quoteCard, app]
   // HTML normalizes CRLF before checking inline-script CSP hashes.
   .map((code) => '\n' + code.replace(/\r\n?/g, '\n') + '\n');
 const crypto = require('crypto');
@@ -47,7 +50,7 @@ const CSP = [
 ].join('; ');
 const html = src('index.html')
   .replace('<meta charset="utf-8">', () => '<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="' + CSP + '">')
-  .replace('<!--STYLES-->', () => '<style>\n' + fontCss() + '</style>\n<style>\n' + src('styles.css') + '\n</style>')
+  .replace('<!--STYLES-->', () => '<style>\n' + fontCss() + '</style>\n<style>\n' + src('styles.css').replace('__NOTEBOOK_WIRE__', notebookWire) + '\n</style>')
   .replace('<!--SCRIPTS-->', () => scripts.map((code) => '<script>' + code + '</script>').join('\n'));
 
 fs.mkdirSync('dist/app', { recursive: true });

@@ -8,6 +8,6 @@ if [ -n "$N" ]; then MK="$N/linux/makensis"; export NSISDIR="$N"; else MK=makens
 SRC=$(mktemp -d)
 cp -r ../dist/win/Polka/. "$SRC"/
 V=$(node -p "require('../electron/package.json').version")
-"$MK" -V2 -DVERSION="$V" -DSRC="$SRC" installer.nsi
+"$MK" -INPUTCHARSET UTF8 -V2 -DVERSION="$V" -DSRC="$SRC" installer.nsi
 rm -rf "$SRC"
 echo "готово: dist/Polka-Setup-$V.exe"
