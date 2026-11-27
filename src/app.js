@@ -531,21 +531,41 @@
   function setShelfView(id, mode) { S.shelfView = Object.assign({}, S.shelfView, { [id]: mode }); saveSettings(); SH.page = 0; renderShelves(); }
 
   // сколько книг помещается на странице полки без прокрутки
-  function shelfPerPage(mode) {
+  function shelfPageStarts(mode, items, progress, notebooks) {
     const grid = $('grid'), main = $('lib-main');
-    const cs = getComputedStyle(grid), gapX = parseFloat(cs.columnGap) || 30, gapY = parseFloat(cs.rowGap) || 30;
-    const w = grid.clientWidth || main.clientWidth - 80;
+    const style = getComputedStyle(grid);
+    const tracks = style.gridTemplateColumns.match(/[\d.]+px/g) || [];
+    const columns = Math.max(1, tracks.length);
+    const coverWidth = parseFloat(tracks[0]) || grid.clientWidth;
+    const coverHeight = coverWidth * 1.5 + 92;
+    const listHeight = parseFloat(style.getPropertyValue('--book-row-height'));
+    const detailHeight = parseFloat(style.getPropertyValue('--book-row-detail-height'));
+    const gap = parseFloat(style.rowGap);
     const top = grid.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
-    const avail = main.clientHeight - top - 78;
-    if (mode === 'list') {
-      const cols = w >= 760 ? 2 : 1, rowH = 156;
-      return cols * Math.max(1, Math.floor((avail + gapY) / (rowH + gapY)));
+    const available = main.clientHeight - top - parseFloat(getComputedStyle(main).paddingBottom);
+    // Высота ряда зависит от самой высокой карточки, включая прогресс и кнопку блокнота.
+    const rows = [];
+    for (let start = 0; start < items.length; start += columns) {
+      const detailed = mode === 'list' && items.slice(start, start + columns).some(({ e }) =>
+        bookStatus(progress[e.id]) !== 'later' || !padEmpty(notebooks[e.id]));
+      rows.push({ start, height: mode === 'list' ? (detailed ? detailHeight : listHeight) : coverHeight });
     }
-    const cols = Math.max(1, Math.floor((w + gapX) / (118 + gapX)));
-    const colW = (w - (cols - 1) * gapX) / cols;
-    const cardH = colW * 1.5 + 92;
-    const rows = Math.max(1, Math.floor((avail + gapY) / (cardH + gapY)));
-    return cols * rows;
+    const totalHeight = rows.reduce((sum, row) => sum + row.height, 0) + Math.max(0, rows.length - 1) * gap;
+    if (totalHeight <= available) return [0, items.length];
+
+    const folio = getComputedStyle($('sh-folio'));
+    const limit = available - parseFloat(folio.marginTop) - parseFloat(folio.minHeight);
+    const starts = [0];
+    let used = 0;
+    for (const row of rows) {
+      if (used && used + gap + row.height > limit) {
+        starts.push(row.start);
+        used = 0;
+      }
+      used += row.height + (used ? gap : 0);
+    }
+    starts.push(items.length);
+    return starts;
   }
 
   function folioHtml(pages, cur) {
@@ -670,6 +690,22 @@
       '</div>';
   }
 
+  function alignHeroNotebooks(grid) {
+    for (const title of grid.querySelectorAll('.hb-t')) {
+      const bounds = title.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(title);
+      let edge = bounds.left;
+      for (const line of range.getClientRects()) {
+        if ((line.top + line.bottom) / 2 < bounds.bottom) edge = Math.max(edge, line.right);
+      }
+      if (edge > bounds.left) {
+        const width = Math.min(edge, bounds.right) - bounds.left;
+        title.closest('.hb').style.setProperty('--hb-title-width', width + 'px');
+      }
+    }
+  }
+
   function renderShelves() {
     const prog = progress();
     const q = L.query.trim().toLowerCase().replace(/ё/g, 'е');
@@ -735,10 +771,11 @@
     const grid = $('grid');
     grid.className = heroMode ? 'grid hb-list n' + items.length : mode === 'list' ? 'grid rows' : 'grid';
 
-    const per = heroMode ? 2 : shelfPerPage(mode);
-    SH.pages = Math.max(1, Math.ceil(items.length / per));
+    const notebookRecords = mode === 'list' ? pads() : {};
+    const starts = heroMode ? [0, items.length] : shelfPageStarts(mode, items, prog, notebookRecords);
+    SH.pages = starts.length - 1;
     SH.page = Math.max(0, Math.min(SH.page, SH.pages - 1));
-    const pageItems = items.slice(SH.page * per, SH.page * per + per);
+    const pageItems = items.slice(starts[SH.page], starts[SH.page + 1]);
     $('nothing-found').hidden = items.length > 0;
     $('nothing-found').textContent = emptyText;
     const more = '<span class="bc-more" data-more="1" title="На полку, отложить, прочитано">⋯</span>';
@@ -750,7 +787,7 @@
       if (mode === 'list') {
         const bl = bookBlurb(b, p);
         const text = bl ? '<div class="br-text' + (bl.serif ? ' br-snip' : '') + '"><span class="br-label">' + bl.kind + ' · </span>' + esc(bl.text) + '</div>' : '';
-        const hasPad = !padEmpty(padOf(b.e.id));
+        const hasPad = !padEmpty(notebookRecords[b.e.id]);
         const row = '<button class="book-row" data-id="' + esc(b.e.id) + '" data-book-name="' + esc(b.e.name) + '"><div class="br-cover">' + (hasPad ? notebookCover() : '') + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more + '</div><div class="br-info">' +
           '<div class="br-title">' + esc(b.title) + '</div><div class="br-author">' + esc(b.author || ' ') + '</div>' +
           (metaLine ? '<div class="bc-meta">' + metaLine + '</div>' : '') + text + '</div></button>';
@@ -762,6 +799,10 @@
         '<div class="bc-title">' + esc(b.title) + '</div><div class="bc-author">' + esc(b.author || ' ') + '</div>' +
         '<div class="bc-meta">' + metaLine + '</div></button>';
     }).join('');
+    if (heroMode) {
+      alignHeroNotebooks(grid);
+      if (document.fonts.status === 'loading') document.fonts.ready.then(() => alignHeroNotebooks(grid));
+    }
     $('sh-folio').hidden = SH.pages < 2;
     $('sh-folio').innerHTML = SH.pages < 2 ? '' : folioHtml(SH.pages, SH.page);
   }
@@ -2486,7 +2527,11 @@
     if (k === 'font') PADE?.reflowAfterFont();
     if (k === 'keepAwake') syncReadingPower();
     if (k === 'focus') { applyFocus(); if (fxOn()) fxPick(); }
-    if (k === 'theme' && S.focus === 'sent') paintSent();
+    if (k === 'theme') {
+      PADE?.applyColors();
+      PADV.spread?.applyColors();
+      if (S.focus === 'sent') paintSent();
+    }
     if (k === 'typo' && R.book && !R.rendering) { renderChapter(R.ch, { off: R.off, keepOff: true }); return; }
     if (k === 'remember') renderLibrary();
     if (k === 'auto') { if (v !== 'off') toast('Автопрокрутка · ' + v + ' слов в минуту · пробел — пауза', 2600); autoSchedule(); }
@@ -2957,7 +3002,7 @@
         if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
         if (ev.code === 'KeyT') openToc('toc');
         else if (ev.code === 'KeyB') toggleBookmark();
-        else if (ev.code === 'KeyN') { ev.preventDefault(); togglePad(); }
+        else if (ev.code === 'KeyN') { ev.preventDefault(); openPad(); }
         else if (ev.code === 'KeyF') toggleFullscreen();
     }
   });
@@ -3900,9 +3945,9 @@
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const name = (title + ' — цитата').slice(0, 110) + '.png';
         const copying = native.padClipboardWrite?.({ image: bytes }).catch(() => false);
-        const saved = await native.saveQuotePng({ name, bytes });
+        await native.saveQuotePng({ name, bytes });
         await copying;
-        return saved ? { copied: true, message: 'Карточка сохранена' } : null;
+        return;
       }
       if (native?.padClipboardWrite) {
         const blob = await window.PolkaQuoteCard.render(options);
@@ -4842,8 +4887,49 @@
   // Сохраняется сам — при закрытии и через секунду тишины. В дневнике — раздел «## Блокнот» в файле книги,
   // листы разделены строкой «---».
   const pads = () => LS.get('pads', {});
-  const PAD_COLORS = { ivory: ['Слоновая кость', null], sand: ['Песочный', '#e3d0a7'], sage: ['Серо-зелёный', '#c4cfc4'], rose: ['Серо-розовый', '#d7c4c6'] };
-  const PAD_INKS = { graphite: ['Графит', null], blue: ['Тёмно-синие', '#203858'], sepia: ['Сепия', '#4f3425'], burgundy: ['Бордовые', '#552c3b'] };
+  const PAD_COLORS = {
+    ivory: ['Слоновая кость', null],
+    sand: ['Песочный', '#e3d0a7'],
+    mist: ['Серо-голубой', '#cbd8e3'],
+    sage: ['Серо-зелёный', '#c4cfc4'],
+    rose: ['Серо-розовый', '#d7c4c6'],
+    slate: ['Тёмно-синий сланец', '#3c4654'],
+    forest: ['Тёмно-хвойный', '#343f36'],
+    charcoal: ['Угольный', '#2b292c'],
+  };
+  const PAD_INKS = {
+    cream: ['Сливочные', '#e6ddc7'],
+    ice: ['Светло-голубые', '#c0d6eb'],
+    paleSage: ['Светло-шалфейные', '#c6d4bc'],
+    lilac: ['Светло-сиреневые', '#d6c6e1'],
+    sepia: ['Сепия', '#4f3425'],
+    burgundy: ['Бордовые', '#552c3b'],
+    blue: ['Тёмно-синие', '#203858'],
+    graphite: ['Графит', null],
+  };
+  function padLuminance(hex) {
+    const rgb = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16) / 255);
+    const [r, g, b] = rgb.map((channel) => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4);
+    return .2126 * r + .7152 * g + .0722 * b;
+  }
+  function padContrast(a, b) {
+    return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+  }
+  function padAppearance(options) {
+    const theme = getComputedStyle(document.documentElement);
+    const palette = (colors, fallback) => Object.fromEntries(Object.entries(colors).map(([id, [, value]]) => {
+      const color = value || theme.getPropertyValue(fallback).trim();
+      return [id, { color, light: padLuminance(color) }];
+    }));
+    const papers = palette(PAD_COLORS, '--pad-paper');
+    const inks = palette(PAD_INKS, '--pad-ink');
+    const paperId = Object.hasOwn(papers, options.paper) ? options.paper : PAD_OPTIONS.paper;
+    const paper = papers[paperId];
+    const dark = paper.light < .20;
+    const readable = (ink) => !!ink && padContrast(paper.light, ink.light) >= 4.5;
+    const inkId = Object.hasOwn(inks, options.ink) && readable(inks[options.ink]) ? options.ink : dark ? 'cream' : 'graphite';
+    return { papers, inks, paperId, inkId, paper, ink: inks[inkId], readable, dark };
+  }
   const PAD_OPTIONS = { font: 'book', size: 16, paper: 'ivory', ink: 'graphite', rule: 'plain', navigation: 'pages', numbers: true, pinned: false };
   const padOptions = (id) => {
     const options = { ...PAD_OPTIONS, ...LS.get('padOptions', {})[id] };
@@ -4960,8 +5046,21 @@
     settings.classList.toggle('pad-aligned', open || S.setTab === 'pad');
     if (!R.book) return;
     const options = padOptions(R.id);
+    const appearance = padAppearance(options);
+    for (const [key, colors] of [['paper', appearance.papers], ['ink', appearance.inks]]) {
+      const group = $('pad-' + key + '-colors');
+      const order = [...group.children].sort((a, b) => colors[b.dataset.v].light - colors[a.dataset.v].light);
+      order.forEach((button, index) => {
+        if (group.children[index] !== button) group.insertBefore(button, group.children[index]);
+        const value = colors[button.dataset.v];
+        button.style.setProperty('--swatch-mark', padContrast(value.light, 0) >= padContrast(value.light, 1) ? '#171619' : '#fff');
+        button.disabled = key === 'ink' && !appearance.readable(value);
+        button.title = button.getAttribute('aria-label') + (button.disabled ? ' · низкий контраст с этой бумагой' : '');
+      });
+    }
+    const shown = { ...options, paper: appearance.paperId, ink: appearance.inkId };
     settings.querySelectorAll('[data-pad-setting]').forEach((button) => {
-      const active = options[button.dataset.padSetting] === button.dataset.v;
+      const active = shown[button.dataset.padSetting] === button.dataset.v;
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', String(active));
     });
@@ -5167,12 +5266,17 @@
       E.dirty = true; clearTimeout(E.timer); E.timer = setTimeout(E.save, 1000);
     };
     E.save = () => { clearTimeout(E.timer); if (!E.dirty) return; commit(); E.dirty = false; savePad(E.id, E.pages.slice(), true, continuations); if (opts.onSave) opts.onSave(); };
+    E.applyColors = () => {
+      const appearance = padAppearance(options);
+      host.style.setProperty('--pad-custom-paper', appearance.paper.color);
+      host.style.setProperty('--pad-custom-ink', appearance.ink.color);
+      host.dataset.padTone = appearance.dark ? 'dark' : 'light';
+    };
     function applyAppearance() {
       host.dataset.padRule = options.rule;
       host.dataset.padFont = options.font;
       host.dataset.padNavigation = options.navigation;
-      host.style.setProperty('--pad-custom-paper', PAD_COLORS[options.paper]?.[1] || 'var(--pad-paper)');
-      host.style.setProperty('--pad-custom-ink', PAD_INKS[options.ink]?.[1] || 'var(--pad-ink)');
+      E.applyColors();
       host.style.setProperty('--pad-text-size', options.size + 'px');
       host.style.setProperty('--pad-line', lineStep() + 'px');
       host.querySelectorAll('.pad-rich-text').forEach(sizeText);
@@ -5679,7 +5783,16 @@
         show(E.cur + d, d > 0 ? 0 : -1);
       }
     };
-    if (!viewOnly) notebookClipboard(host, E);
+    if (!viewOnly) {
+      notebookClipboard(host, E);
+      host.onclick = (event) => {
+        if (event.target.closest('textarea, button, .pad-image, .pad-folio')) return;
+        const section = event.target.closest('[data-pad-page]') || (!paged() && [...rich.children]
+          .findLast((sheet) => sheet.getBoundingClientRect().top <= event.clientY));
+        const index = section ? Number(section.dataset.padPage) : (paged() ? E.cur : visiblePage);
+        focusAt(index, E.pages[index].length);
+      };
+    }
     applyAppearance();
     const last = viewOnly ? 0 : E.pages.length - 1;
     revealPaginated(last, E.pages[last].length, false);
@@ -5723,7 +5836,7 @@
         rich.scrollTop += y - rich.getBoundingClientRect().top - line;
       }
     };
-    E.focusEnd = () => show(E.cur, -1);
+    E.focusEnd = () => focusAt(E.cur, E.pages[E.cur].length);
     return E;
   }
 
@@ -5781,16 +5894,15 @@
     describePadWidth();
     syncSettings();
     const editor = PADE;
+    if (!anchor) editor.focusEnd();
     await relayout();
-    if (PADE === editor) {
-      if (anchor) editor.restorePreviewAnchor(anchor);
-      else editor.focusEnd();
-    }
+    if (anchor && PADE === editor) editor.restorePreviewAnchor(anchor);
   }
   async function closePad() {
     if (!padOpen()) return;
     if (PADE) PADE.save();
     PADE = null;
+    if ($('pad').contains(document.activeElement)) document.activeElement.blur();
     $('pad').hidden = true; reader.classList.remove('pad-on'); $('btn-pad').classList.remove('active');
     syncSettings();
     await relayout();
@@ -5984,6 +6096,7 @@
         animation.onfinish = () => { if (overlay === current) stop(); };
       },
       resize: () => { stop(); left.reflowAfterFont(); right.reflowAfterFont(); },
+      applyColors: () => { left.applyColors(); right.applyColors(); },
       stop,
     };
   }

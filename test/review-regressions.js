@@ -610,6 +610,14 @@ async function run() {
     assert.ok(smallPages.length > 1 && smallPages.length < largePages.length);
     assert.equal(smallPages.join(''), longNotebook);
     assert.equal(await page.locator('#pad-sheet').evaluate((el) => getComputedStyle(el).color), 'rgb(32, 56, 88)');
+    const paperSwatches = page.locator('#pad-paper-colors button');
+    assert.equal(await paperSwatches.count(), 8);
+    await page.getByRole('button', { name: 'Угольный', exact: true }).click();
+    assert.equal(await page.locator('#pad-sheet').getAttribute('data-pad-tone'), 'dark');
+    assert.equal(await page.getByRole('button', { name: 'Сливочные', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.ok(await page.getByRole('button', { name: 'Тёмно-синие', exact: true }).isDisabled());
+    await page.getByRole('button', { name: 'Слоновая кость', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: 'Тёмно-синие', exact: true }).getAttribute('aria-pressed'), 'true');
     await page.evaluate(() => document.getElementById('btn-settings').click());
     const editorField = page.locator('#pad-sheet .pad-ta').first();
     assert.equal(await editorField.evaluate((el) => getComputedStyle(el).scrollbarWidth), 'none');
@@ -657,6 +665,69 @@ async function run() {
     });
     await delay(100);
     assert.ok(await page.locator('#book-end').isHidden());
+    const guidePage = await browser.newPage({ viewport: { width: 1300, height: 880 } });
+    await guidePage.goto(pathToFileURL(path.resolve(__dirname, '../dist/app/index.html')).href);
+    const guide = fs.readFileSync(path.join(__dirname, '../src/guide/guide.fb2')).toString('base64');
+    await guidePage.evaluate(async (data) => {
+      const file = new File([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], 'Путеводитель.fb2');
+      const app = window.__polka;
+      await app.changeSetting('cols', '1');
+      await app.changeSetting('flip', 'turn');
+      await app.openEntry({ file, name: file.name, id: 'guide-layout-test' }, { ch: 1, off: 0 });
+      const chapter = app.R.book.chapters.findIndex((entry) => entry.html.includes('guide-caption-'));
+      await app.goTo(chapter, { page: 0 });
+    }, guide);
+    await guidePage.locator('.flip-slot .guide-caption').first().waitFor({ state: 'attached' });
+    const guideTurn = await guidePage.evaluate(async () => {
+      const original = document.querySelector('#flow .guide-caption');
+      const image = document.querySelector('#flow .guide-picture img');
+      await window.__polka.next();
+      const clone = document.querySelector('.flip-slot.on .guide-caption');
+      const cloneImage = document.querySelector('.flip-slot.on .guide-picture img');
+      const sameSize = ['fontSize', 'lineHeight', 'marginBottom'].every(
+        (key) => getComputedStyle(original)[key] === getComputedStyle(clone)[key]);
+      const sameImage = getComputedStyle(image).maxHeight === getComputedStyle(cloneImage).maxHeight;
+      window.__flipSeek(1);
+      return { sameSize, sameImage, hasDuplicateId: clone.hasAttribute('id') };
+    });
+    assert.deepEqual(guideTurn, { sameSize: true, sameImage: true, hasDuplicateId: false });
+    await guidePage.mouse.move(1120, 16);
+    await guidePage.locator('#btn-pad').click();
+    const pad = guidePage.locator('#pad');
+    const editor = pad.locator('.pad-ta:visible');
+    assert.ok(await editor.evaluate((field) => field === document.activeElement));
+    await guidePage.evaluate(() => window.__polka.changeSetting('focus', 'sheet'));
+    const headerOffset = await guidePage.evaluate(() => {
+      const center = (element) => { const rect = element.getBoundingClientRect(); return rect.left + rect.width / 2; };
+      return center(document.querySelector('.r-title')) - center(document.getElementById('sheet'));
+    });
+    assert.ok(Math.abs(headerOffset) < 1, 'The book title is centered over its sheet when the notebook is open');
+    await guidePage.keyboard.type('First');
+    assert.equal(await editor.inputValue(), 'First');
+    await editor.blur();
+    await guidePage.keyboard.press('KeyN');
+    assert.ok(await pad.isVisible(), 'N does not close an open notebook');
+    await pad.locator('#pad-sheet').click({ position: { x: 8, y: 10 } });
+    assert.ok(await editor.evaluate((field) => field === document.activeElement));
+    await guidePage.keyboard.type(' note');
+    assert.equal(await editor.inputValue(), 'First note');
+    await guidePage.keyboard.press('Control+n');
+    await pad.waitFor({ state: 'hidden' });
+
+    await guidePage.evaluate(() => {
+      const id = window.__polka.R.id;
+      localStorage.setItem('polka.padOptions', JSON.stringify({ [id]: { navigation: 'scroll' } }));
+    });
+    await guidePage.keyboard.press('KeyN');
+    const scrollEditor = pad.locator('.pad-rich-text');
+    assert.ok(await scrollEditor.evaluate((field) => field === document.activeElement));
+    await scrollEditor.blur();
+    await pad.locator('.pad-rich').click({ position: { x: 10, y: 100 } });
+    await guidePage.keyboard.type(' again');
+    assert.equal(await scrollEditor.inputValue(), 'First note again');
+    await guidePage.keyboard.press('Control+n');
+    await pad.waitFor({ state: 'hidden' });
+    await guidePage.close();
     assert.deepEqual(errors, []);
     console.log('Review regressions passed');
   } finally {

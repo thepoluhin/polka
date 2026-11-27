@@ -83,6 +83,23 @@
     layout.lines.forEach((line, i) => ctx.fillText(line, x, y + baselineOffset + layout.step * i));
   }
 
+  function drawQuote(ctx, layout) {
+    // Вес видимых штрихов учитывает разную длину строк. Поправка ограничена,
+    // чтобы поля между текстом и кавычками оставались визуально равными.
+    ctx.font = layout.font;
+    let weight = 0, weightedCenter = 0;
+    layout.lines.forEach((line, index) => {
+      if (!line.trim()) return;
+      const metrics = ctx.measureText(line);
+      const lineCenter = index * layout.step + (metrics.actualBoundingBoxDescent - metrics.actualBoundingBoxAscent) / 2;
+      weight += metrics.width;
+      weightedCenter += lineCenter * metrics.width;
+    });
+    const inkCenter = (layout.ink.top + layout.ink.bottom) / 2;
+    const optical = weight ? Math.max(-6, Math.min(6, (inkCenter - weightedCenter / weight) * .35)) : 0;
+    drawText(ctx, layout, 112, QUOTE_CENTER_Y - layout.used / 2 + optical);
+  }
+
   function drawCover(ctx, image, title, author) {
     const x = 112, y = 878, w = 256, h = 384;
     ctx.save();
@@ -140,7 +157,7 @@
     ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
     const quoteLayout = fit(ctx, text, { width: 860, height: 406, max: 48.5, min: 26, leading: 1.515, family: QUOTE_FONT, color: INK, measureInk: true });
     if (!quoteLayout) throw new Error('Цитата слишком длинная для карточки. Выберите фрагмент короче.');
-    drawText(ctx, quoteLayout, 112, QUOTE_CENTER_Y - quoteLayout.used / 2);
+    drawQuote(ctx, quoteLayout);
     drawCover(ctx, coverImage, title, author);
     const titleLayout = fit(ctx, title, { width: 500, height: 68, max: 42, min: 18, leading: 1.07, family: SERIF, color: INK, bold: true, truncate: true });
     const authorLayout = fit(ctx, author, { width: 470, height: 36, max: 28, min: 12, leading: 1.1, family: SANS, color: '#71604e', truncate: true });
