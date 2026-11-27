@@ -568,8 +568,6 @@
     }).join('') + (total > shown.length ? '<em>+' + (total - shown.length) + '</em>' : '') + '</span>';
   }
 
-  const ago = (t) => { const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? 'сегодня' : d === 1 ? 'вчера' : d < 7 ? d + ' ' + plural(d, 'день', 'дня', 'дней') + ' назад' : ruDay(t); };
-  const ruDay = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 
   // «I» или «3» — это номер главы, добавим слово
   const chapLabel = (c) => !c ? '' : /^[IVXLCDM\d]+\.?$/i.test(String(c).trim()) ? 'глава ' + String(c).trim() : c;
@@ -578,7 +576,7 @@
   function bookBlurb(b, p) {
     if (bookStatus(p) === 'reading') {
       // цитаты и мысли начатой книги — стикерами на обложке, в тексте только место чтения
-      if (p && p.snip) return { kind: 'Где вы остановились', text: p.snip, serif: true, meta: (p.chap ? chapLabel(p.chap) + ', ' : '') + ago(p.t || Date.now()) };
+      if (p && p.snip) return { kind: 'Где вы остановились', text: p.snip, serif: true };
       return b.m.annot ? { kind: 'О книге', text: b.m.annot } : null;
     }
     if (b.m.annot) return { kind: 'О книге', text: b.m.annot };
@@ -615,9 +613,9 @@
     stkHot = el; el.classList.add('hot');
     const tip = stkTip();
     tip.innerHTML = g.slice(0, 3).map((it) => {
-      const text = it.kind === 'note' ? (it.body || it.text || '') : it.text || '';
+      const text = it.text || it.body || '';
       const tags = (it.tags || []).slice(0, 2).map((t) => '<span style="background:' + tagColor(t) + '">#' + esc(t) + '</span>').join('');
-      return '<button class="st-item" data-stkopen="' + esc(id) + '" data-item="' + esc(it.id) + '"><span class="st-q' + (it.kind === 'note' ? ' st-note' : '') + '">' + (it.kind === 'note' ? '' : '«') + esc(text.slice(0, 220)) + (text.length > 220 ? '…' : '') + (it.kind === 'note' ? '' : '»') + '</span>' +
+      return '<button class="st-item" data-stkopen="' + esc(id) + '" data-item="' + esc(it.id) + '"><span class="st-q">' + (it.text ? '«' : '') + esc(text.slice(0, 220)) + (text.length > 220 ? '…' : '') + (it.text ? '»' : '') + '</span>' +
         '<span class="st-m">' + tags + esc((it.chapter ? chapLabel(it.chapter) + ' · ' : '') + Math.round(it.pct * 100) + '% книги') + '</span></button>';
     }).join('') + (g.length > 3 ? '<div class="st-more">и ещё ' + (g.length - 3) + '</div>' : '') + '<div class="st-go">Открыть на этом месте →</div>';
     tip.hidden = false;
@@ -641,16 +639,34 @@
 
   // большая карточка книги, которую читаете (1–2 книги в «Читаю сейчас», вид «с описанием»).
   // Строки сетки — название, автор, текст, кнопка — общие у соседних карточек, поэтому всё стоит ровно.
+  const notebookCoverSrc = 'data:image/webp;base64,__NOTEBOOK_COVER__';
+  function notebookCover(stamp = false, caption = '') {
+    return '<span class="hb-pad-cover" aria-hidden="true"><img src="' + notebookCoverSrc + '" alt="" draggable="false">' +
+      (stamp ? '<span class="hb-pad-stamp">Блокнот</span>' : caption) + '</span>';
+  }
   function heroHtml(b, p, size) {
     const pct = Math.round((p.pct || 0) * 100), bl = bookBlurb(b, p);
-    const tags = bl && bl.tags && bl.tags.length ? '<div class="hb-tags">' + bl.tags.map((t) => '<span style="background:' + tagColor(t) + '">#' + esc(t) + '</span>').join('') + '</div>' : '';
+    const chapter = bl?.serif ? chapLabel(p.chap) : '';
+    let excerpt = bl?.text || '';
+    if (chapter) {
+      const clean = (text) => String(text || '').replace(/\u00ad/g, '').replace(/\s+/g, ' ').trim();
+      const heading = clean(p.chap), text = clean(excerpt);
+      if (heading && text.toLowerCase().startsWith(heading.toLowerCase()) && /^(?:[\s.:…—–-]|$)/.test(text.slice(heading.length))) {
+        excerpt = text.slice(heading.length).replace(/^[\s.:…—–-]+/, '');
+      }
+    }
+    const hasPad = !padEmpty(padOf(b.e.id));
+    const notebook = hasPad
+      ? '<div class="hb-pad">' + notebookCover(true) + '<button type="button" class="hb-pad-action" data-open-pad="' + esc(b.e.id) + '" aria-label="Открыть блокнот">Открыть</button></div>'
+      : '<div class="hb-pad hb-pad-empty"><span class="hb-pad-cover">Нет блокнота</span></div>';
     return '<div class="hb' + (size === 1 ? ' big' : '') + '" data-id="' + esc(b.e.id) + '">' +
-      '<div class="hb-cover">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + '</div>' +
+      '<div class="hb-book"><div class="hb-cover">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + '</div>' +
+      '<button type="button" class="hb-go" title="Продолжить чтение"><i style="width:' + Math.max(pct, 2) + '%"></i><b>Продолжить</b><em>' + pct + '%</em></button></div>' +
       '<div class="hb-t">' + esc(b.title) + '</div>' +
-      '<div class="hb-a">' + esc(b.author || ' ') + (p.chap ? '<span class="hb-ch"> · ' + esc(chapLabel(p.chap)) + '</span>' : '') + '</div>' +
-      '<div class="hb-sec">' + (bl ? '<div class="hb-k">' + bl.kind + '</div><div class="' + (bl.serif ? 'hb-q' : 'hb-anno') + '"' + (bl.color ? ' style="border-color:' + bl.color + '"' : '') + '>' + esc(bl.text) + '</div>' +
-        (bl.meta ? '<div class="hb-meta">' + esc(bl.meta) + '</div>' : '') + tags : '') + '</div>' +
-      '<button type="button" class="hb-go" title="Продолжить чтение"><i style="width:' + Math.max(pct, 2) + '%"></i><b>Продолжить</b><em>' + pct + '%</em></button>' +
+      '<div class="hb-a">' + (b.author ? '<span>Автор</span> ' + esc(b.author) : '') + '</div>' +
+      '<div class="hb-sec"><div class="hb-position">' + (bl ? '<div class="hb-k">' + bl.kind + '</div>' +
+        (chapter ? '<div class="hb-ch">' + esc(chapter) + '</div>' : '') +
+        (excerpt ? '<div class="' + (bl.serif ? 'hb-q' : 'hb-anno') + '">' + esc(excerpt) + '</div>' : '') : '') + '</div>' + notebook + '</div>' +
       '</div>';
   }
 
@@ -688,7 +704,7 @@
     const side = (id, name, custom) => {
       const list = sorted(shelfBooks(id), id);
       if (SH.edit === id) return '<div class="sh-tab editing"><input class="sh-input" id="sh-input" data-shelf="' + esc(id) + '" value="' + esc(name) + '" maxlength="40" spellcheck="false"></div>';
-      return '<button class="sh-tab' + (!q && SH.tab === id ? ' on' : '') + '" data-shelf="' + esc(id) + '"' + (custom ? ' data-custom="1"' : '') + '>' +
+      return '<button class="sh-tab' + (!q && SH.tab === id ? ' on' : '') + '" data-shelf="' + esc(id) + '" aria-pressed="' + String(!q && SH.tab === id) + '"' + (custom ? ' data-custom="1"' : '') + '>' +
         '<span class="st-name">' + esc(name) + '</span><small>' + list.length + '</small>' + spinesHtml(list, list.length) + '</button>';
     };
     let col = '';
@@ -734,11 +750,15 @@
       if (mode === 'list') {
         const bl = bookBlurb(b, p);
         const text = bl ? '<div class="br-text' + (bl.serif ? ' br-snip' : '') + '"><span class="br-label">' + bl.kind + ' · </span>' + esc(bl.text) + '</div>' : '';
-        return '<button class="book-row" data-id="' + esc(b.e.id) + '" data-book-name="' + esc(b.e.name) + '"><div class="br-cover">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more + '</div><div class="br-info">' +
+        const hasPad = !padEmpty(padOf(b.e.id));
+        const row = '<button class="book-row" data-id="' + esc(b.e.id) + '" data-book-name="' + esc(b.e.name) + '"><div class="br-cover">' + (hasPad ? notebookCover() : '') + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more + '</div><div class="br-info">' +
           '<div class="br-title">' + esc(b.title) + '</div><div class="br-author">' + esc(b.author || ' ') + '</div>' +
           (metaLine ? '<div class="bc-meta">' + metaLine + '</div>' : '') + text + '</div></button>';
+        if (!hasPad) return row;
+        return '<div class="br-with-pad">' + row + '<button type="button" class="br-pad-action" data-open-pad="' + esc(b.e.id) + '" aria-label="Открыть блокнот к книге «' + esc(b.title) + '»">Блокнот <span aria-hidden="true">›</span></button></div>';
       }
-      return '<button class="book-card" data-id="' + esc(b.e.id) + '" data-book-name="' + esc(b.e.name) + '" title="' + esc(b.title + (b.author ? ' — ' + b.author : '')) + '">' + coverHtml(b.m, b.e.name, stickers(b.e.id)) + more +
+      const cover = coverHtml(b.m, b.e.name);
+      return '<button class="book-card" data-id="' + esc(b.e.id) + '" data-book-name="' + esc(b.e.name) + '" title="' + esc(b.title + (b.author ? ' — ' + b.author : '')) + '">' + cover + more +
         '<div class="bc-title">' + esc(b.title) + '</div><div class="bc-author">' + esc(b.author || ' ') + '</div>' +
         '<div class="bc-meta">' + metaLine + '</div></button>';
     }).join('');
@@ -831,10 +851,10 @@
   };
   const flow = $('flow'), viewport = $('viewport'), stage = $('stage'), reader = $('reader');
 
-  async function openEntry(e, at) {
+  async function openEntry(e, at, { withPad = false, padAnchor = null } = {}) {
     if (R.opening) return; // двойной клик не разбирает книгу дважды
     const opening = R.opening = Symbol();
-    try { await openEntryInner(e, at, opening); }
+    try { await openEntryInner(e, at, opening, withPad, padAnchor); }
     finally {
       if (R.opening === opening) {
         document.body.style.cursor = '';
@@ -842,7 +862,7 @@
       }
     }
   }
-  async function openEntryInner(e, at, opening) {
+  async function openEntryInner(e, at, opening, withPad, padAnchor) {
     const lib = $('library');
     document.body.style.cursor = 'progress';
     try {
@@ -873,6 +893,10 @@
       else {
         const ch = pos && pos.ch < book.chapters.length ? pos.ch : 0;
         if (!await renderChapter(ch, pos ? { off: pos.off || 0, keepOff: true } : { page: 0 })) return;
+      }
+      if (withPad) {
+        await openPad(padAnchor);
+        if (R.book !== book || R.opening !== opening) return;
       }
       showUi(true);
       hideUiSoon();
@@ -1566,11 +1590,11 @@
     return { x: vr.left - pad, y: sr.top, w: vr.width + 2 * pad, h: sr.height, spread };
   }
   const paperColor = () => getComputedStyle(stage).getPropertyValue('--bg').trim() || getComputedStyle(document.body).backgroundColor;
-  function makeSlot() {
+  function makeSlot(parent = reader) {
     const slot = document.createElement('div');
     slot.className = 'flip-slot';
     slot.innerHTML = '<div class="fs-front"><div class="fs-sheet"><div class="sheet-head"></div><div class="sheet-foot"></div></div><div class="fs-vp"></div><div class="fs-shade"></div></div><div class="fs-back"><div class="fs-bshade"></div></div>';
-    reader.appendChild(slot);
+    parent.appendChild(slot);
     return slot;
   }
   function flipPrepare() {
@@ -1662,7 +1686,7 @@
         if (stopped) return;
         const k = quick ? 0.62 : 1;
         turnSound(S.flip === 'curl' ? 'curl' : 'turn', (S.flip === 'curl' ? 760 : 660) * k / 1000);
-        if (S.flip === 'curl') curl = playCurl(leaf, reg, lx, half, dir, paper, 760 * k, (id) => { raf = id; }, () => ctl.stop());
+        if (S.flip === 'curl') curl = playCurl(leaf, reg, lx, half, dir, paper, 760 * k, (id) => { raf = id; }, () => ctl.stop(), FLIP.cv, stat);
         else anims = playTurn(leaf, reg, lx, half, dir, 660 * k, () => ctl.stop());
       },
       // для автотестов: остановить на доле анимации
@@ -1702,12 +1726,12 @@
   }
 
   // «Загиб»: страница загибается от нижнего угла, как в настоящей книге
-  function playCurl(leaf, reg, lx, half, dir, paper, T, setRaf, done) {
-    const cv = FLIP.cv, dpr = window.devicePixelRatio || 1, P = (v) => v * dpr;
+  function playCurl(leaf, reg, lx, half, dir, paper, T, setRaf, done, cv, stat) {
+    const dpr = window.devicePixelRatio || 1, P = (v) => v * dpr;
     cv.width = Math.round(window.innerWidth * dpr); cv.height = Math.round(window.innerHeight * dpr);
     cv.style.display = 'block'; cv.style.opacity = 1;
     const ctx = cv.getContext('2d');
-    const fr = leaf.firstChild, stat = FLIP.slots[1];
+    const fr = leaf.firstChild;
     const L = { x: lx, y: reg.y, w: half, h: reg.h };
     const C = dir > 0 ? { x: L.x + L.w, y: L.y + L.h } : { x: L.x, y: L.y + L.h };
     const D = dir > 0 ? { x: L.x - L.w, y: L.y + L.h } : { x: L.x + 2 * L.w, y: L.y + L.h };
@@ -1892,7 +1916,7 @@
     $('be-title').textContent = R.book.title || R.entry.name.replace(BOOK_RE, '');
     $('be-author').textContent = R.book.authors.join(', ');
     $('be-ta').value = (allBookThoughts()[R.id] || {}).body || '';
-    $('be-notes').textContent = n ? 'Цитаты и заметки · ' + n : 'Цитаты и заметки';
+    $('be-notes').textContent = n ? 'Цитаты · ' + n : 'Цитаты';
     $('be-notes').hidden = !n;
     el.hidden = false; R.endShown = true;
     reader.classList.add('at-end');
@@ -1919,7 +1943,7 @@
     toast(status.message, status.failed ? 5000 : undefined);
   };
   $('be-lib').onclick = () => closeBook(false);
-  $('be-notes').onclick = () => openToc('notes');
+  $('be-notes').onclick = () => openToc('quotes');
 
   // ---------- «Фокус» ----------
   // «Абзац»: ярко только абзац, который читаете; «Предложение»: только предложение;
@@ -2175,9 +2199,9 @@
     $('toc-list').hidden = tab !== 'toc';
     $('bm-list').hidden = tab !== 'bookmarks';
     $('q-list').hidden = tab !== 'quotes';
-    $('n-list').hidden = tab !== 'notes';
+    $('n-list').hidden = tab !== 'impression';
     if (tab === 'quotes') { renderQuotesList(); if (window.__syncBook) window.__syncBook(); return; }
-    if (tab === 'notes') { renderNotesList(); if (window.__syncBook) window.__syncBook(); return; }
+    if (tab === 'impression') { renderBookImpression(); if (window.__syncBook) window.__syncBook(); return; }
     if (tab === 'toc') {
       const cur = R.tocCurrent;
       const i = cur ? R.book.toc.indexOf(cur) : -1;
@@ -2423,8 +2447,10 @@
   function buildSettings() {
     $('set-themes').innerHTML = THEMES.map((t) => '<button class="theme-dot" data-theme="' + t.id + '" title="' + t.name + '" style="background:' + t.bg + ';color:' + t.fg + '">Aa</button>').join('');
     $('font-list').innerHTML = FONTS.map((f) => '<button class="font-opt" data-font="' + f.id + '" style="font-family:\'' + f.id + '\', Georgia, serif">' + f.name + '</button>').join('');
-    document.querySelector('.pad-colors').innerHTML = Object.entries(PAD_COLORS).map(([key, [label, color]]) =>
-      '<button data-pad-setting="paper" data-v="' + key + '" title="' + label + '" aria-label="' + label + '" style="--swatch:' + (color || 'var(--pad-paper)') + '"></button>').join('');
+    for (const [key, colors, fallback] of [['paper', PAD_COLORS, '--pad-paper'], ['ink', PAD_INKS, '--pad-ink']]) {
+      $('pad-' + key + '-colors').innerHTML = Object.entries(colors).map(([value, [label, color]]) =>
+        '<button data-pad-setting="' + key + '" data-v="' + value + '" title="' + label + '" aria-label="' + label + '" style="--swatch:' + (color || 'var(' + fallback + ')') + '"></button>').join('');
+    }
     syncSettings();
   }
   function syncSettings() {
@@ -2457,7 +2483,7 @@
   function changeSetting(k, v) {
     if (['font', 'size', 'lh', 'width', 'cols', 'justify', 'hyph', 'focus', 'typo'].includes(k)) dropClones();
     S[k] = v; saveSettings(); applyTheme(); syncSettings();
-    if (k === 'font' || k === 'size') PADE?.applyAppearance();
+    if (k === 'font') PADE?.reflowAfterFont();
     if (k === 'keepAwake') syncReadingPower();
     if (k === 'focus') { applyFocus(); if (fxOn()) fxPick(); }
     if (k === 'theme' && S.focus === 'sent') paintSent();
@@ -2613,6 +2639,16 @@
     if (vb) { setShelfView($('sh-view').dataset.key || SH.tab, vb.dataset.shview); return; }
     const tab = ev.target.closest('button.sh-tab');
     if (tab) { SH.tab = tab.dataset.shelf; SH.page = 0; SH.edit = null; renderShelves(); return; }
+    const notebook = ev.target.closest('[data-open-pad]');
+    if (notebook) {
+      NB.view = 'pads';
+      PADV.query = '';
+      PADV.open = notebook.dataset.openPad;
+      $('search').value = '';
+      $('lib-main').scrollTop = 0;
+      renderLibrary();
+      return;
+    }
     const card = ev.target.closest('[data-id]');
     if (!card || (card.matches('.hb') && !ev.target.closest('.hb-go'))) return;
     const e = L.entries.find((x) => x.id === card.dataset.id);
@@ -2710,7 +2746,7 @@
     if (!ev.target.closest('.font-pick')) closeFontMenu();
     if (!t) return;
     if (t.dataset.tab) { S.setTab = t.dataset.tab; saveSettings(); syncSettings(); }
-    else if (t.dataset.padSetting && PADE) PADE.setOption(t.dataset.padSetting, t.dataset.v);
+    else if (t.dataset.padSetting) changePadOption(t.dataset.padSetting, t.dataset.v);
     else if (t.id === 'font-btn') { const open = $('font-list').hidden; $('font-list').hidden = !open; t.classList.toggle('open', open); }
     else if (t.id === 'snd-chip') { const order = ['soft', 'loud', 'off']; changeSetting('sound', order[(order.indexOf(S.sound) + 1) % 3]); if (S.sound !== 'off') turnSound(S.flip === 'curl' ? 'curl' : S.flip === 'turn' ? 'turn' : 'slide', 0.66, true); }
     else if (t.parentNode.id === 'set-auto') { const v = t.dataset.v === 'off' ? 'off' : +t.dataset.v; if (v !== 'off') S.autoLast = v; AUTO.paused = false; changeSetting('auto', v); }
@@ -2868,6 +2904,13 @@
     }
     const typing = ev.target.matches('input, textarea');
     if (reader.hidden) {
+      if (NB.view === 'pads' && PADV.spread && $('ctx-menu').hidden && $('lib-settings').hidden && $('tags-pop').hidden) {
+        const editing = (typing && !ev.target.matches('.pad-spread textarea[readonly]')) || ev.target.isContentEditable;
+        if (ev.key === 'Escape' && !editing) { ev.preventDefault(); closePadSpread(); return; }
+        if (!editing && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && ['ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'].includes(ev.key)) {
+          ev.preventDefault(); PADV.spread.move(ev.key === 'ArrowRight' || ev.key === 'PageDown' ? 2 : -2); return;
+        }
+      }
       if (ev.key === 'Escape' && !$('ctx-menu').hidden) { closeCtx(); return; }
       if (!typing && !$('shelves').hidden && $('ctx-menu').hidden && $('lib-settings').hidden && (ev.key === 'ArrowRight' || ev.key === 'PageDown' || ev.key === 'ArrowLeft' || ev.key === 'PageUp')) {
         if (shelfTurn(ev.key === 'ArrowRight' || ev.key === 'PageDown' ? 1 : -1)) ev.preventDefault();
@@ -2939,6 +2982,7 @@
   //        Выделение текста: перевод · значение · цитата
   // ============================================================
   const selBar = $('sel-bar'), infoCard = $('info-card'), quotePop = $('quote-pop');
+  const qpShare = $('qp-export');
   let quoteRects = null;
   let menuSelection = null;
   const ZW_RE = /[­​-‏⁠﻿]/g;
@@ -2994,8 +3038,7 @@
     if (!rects.length) { hideSelBar(); return; }
     if (!sameSelection(s, menuSelection) || R.book !== menuSelection.book || R.ch !== menuSelection.ch) {
       menuSelection = { off: s.off, len: s.len, text: s.text, book: R.book, ch: R.ch };
-      $('sel-status').textContent = '';
-    }
+      $('sel-status').textContent = '';    }
     placeNear(selBar, rects, false);
   }
   function hideSelBar() { selBar.hidden = true; menuSelection = null; $('sel-status').textContent = ''; }
@@ -3017,23 +3060,22 @@
     if (b.dataset.act === 'share') {
       const selectedBook = R.book, chapter = R.ch;
       $('sel-status').textContent = '';
-      const result = await exportQuote(s.text, b);
+      const result = await copyQuoteCard(s.text, b);
       if (selBar.hidden || selectedBook !== R.book || chapter !== R.ch || !sameSelection(s, currentSelection())) return;
       if (result?.error) {
         $('sel-status').textContent = result.error;
         showSelBar();
-      } else if (result?.saved) {
-        hideSelBar();
-        if (result.message) toast(result.message);
+      } else if (result?.copied) {
+        $('sel-status').textContent = result.message;
+        showSelBar();
       }
       return;
     }
     hideSelBar();
     const rects = visibleRects(s.range);
-    if (b.dataset.act === 'translate') showTranslation(s.text, rects, padSource(s));
-    else if (b.dataset.act === 'meaning') showMeaning(s.text, rects, padSource(s));
-    else if (b.dataset.act === 'quote') startDraft(s, rects, 'quote');
-    else if (b.dataset.act === 'note') startDraft(s, rects, 'note');
+    if (b.dataset.act === 'translate') showTranslation(s.text, rects, R.book);
+    else if (b.dataset.act === 'meaning') showMeaning(s.text, rects, R.book);
+    else if (b.dataset.act === 'quote') startDraft(s, rects);
   });
 
   // ---------- сеть ----------
@@ -3778,15 +3820,16 @@
     if (Array.isArray(st.shelves) && (st.shelvesT || 0) > LS.get('shelvesT', 0)) { LS.set('shelves', st.shelves); LS.set('shelvesT', st.shelvesT); }
   }
 
-  async function saveItem(kind, s, tags, body) {
+  async function saveQuote(s, tags, body) {
+    const kind = 'quote';
     const ctx = noteCtx();
-    const it = { id: newId(kind === 'note' ? 'n' : 'q'), ch: R.ch, off: s.off, len: s.len, text: s.text,
+    const it = { id: newId('q'), ch: R.ch, off: s.off, len: s.len, text: s.text,
       chapter: (R.tocCurrent && R.tocCurrent.title !== R.book.title && R.tocCurrent.title) || '', pct: currentPct(), tags: tags || [], t: Date.now(), pendingDiary: !!native };
-    if (kind === 'note') it.body = body || ''; else if (body && body.trim()) it.note = body.trim();
-    const list = kind === 'note' ? bookNotes() : bookQuotes();
+    if (body.trim()) it.note = body.trim();
+    const list = bookQuotes();
     list.push(it);
     list.sort((a, b) => a.ch - b.ch || a.off - b.off);
-    kind === 'note' ? setBookNotes(list) : setBookQuotes(list);
+    setBookQuotes(list);
     ctx.items = allItems();
     if (it.tags.length) rememberTags(it.tags);
     paintQuotes();
@@ -3795,7 +3838,7 @@
       try { const p = await writeItem(Object.assign({ kind }, it), ctx); if (p) markItemExported(ctx.id, kind, it.id, p); else status = 'Сохранено в книге (папка не выбрана)'; }
       catch (err) { status = 'Сохранено в книге, но в дневник не записано. Повторим при открытии книги'; console.error(err); toast(status, 5000); }
     } else status = 'Сохранено в книге';
-    return { it: itemById(kind, it.id), status };
+    return { it: quoteById(it.id), status };
   }
 
   function markItemExported(bookId, kind, itemId, file) {
@@ -3841,7 +3884,7 @@
   }
 
   let exportingQuote = false;
-  async function exportQuote(text, button) {
+  async function copyQuoteCard(text, button) {
     if (exportingQuote || !R.book) return;
     exportingQuote = true;
     button.disabled = true;
@@ -3851,22 +3894,34 @@
       const author = R.book.authors.map((name) => normalizeQuoteText(name).replace(/\n/g, ' ')).filter(Boolean).join(', ') || 'Неизвестный автор';
       const cover = R.book.cover || L.metas[R.id]?.cover;
       const typeset = text.split('\n').map(typoText).join('\n');
-      const blob = await window.PolkaQuoteCard.render({ text: typeset, title, author, cover });
-      const name = 'Цитата — ' + title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').slice(0, 90).trim() + '.png';
+      const options = { text: typeset, title, author, cover };
       if (native?.saveQuotePng) {
-        const saved = await native.saveQuotePng({ name, bytes: new Uint8Array(await blob.arrayBuffer()) });
-        return { saved, message: saved ? 'Карточка сохранена' : '' };
-      } else {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = name;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
-        return { saved: true };
+        const blob = await window.PolkaQuoteCard.render(options);
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const name = (title + ' — цитата').slice(0, 110) + '.png';
+        const copying = native.padClipboardWrite?.({ image: bytes }).catch(() => false);
+        const saved = await native.saveQuotePng({ name, bytes });
+        await copying;
+        return saved ? { copied: true, message: 'Карточка сохранена' } : null;
       }
+      if (native?.padClipboardWrite) {
+        const blob = await window.PolkaQuoteCard.render(options);
+        const copied = await native.padClipboardWrite({ image: new Uint8Array(await blob.arrayBuffer()) }).catch(() => false);
+        if (!copied) throw new Error('Не удалось скопировать карточку');
+      } else {
+        if (!navigator.clipboard?.write || !window.ClipboardItem) {
+          throw new Error('Буфер обмена в этом браузере недоступен');
+        }
+        // Браузер запрашивает запись во время клика, пока карточка ещё рисуется.
+        const png = window.PolkaQuoteCard.render(options);
+        const [rendered, copied] = await Promise.allSettled([png,
+          navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])]);
+        if (rendered.status === 'rejected') throw rendered.reason;
+        if (copied.status === 'rejected') throw new Error('Не удалось скопировать карточку');
+      }
+      return { copied: true, message: 'Карточка скопирована в буфер' };
     } catch (err) {
-      return { error: err.message || 'Не удалось сохранить карточку' };
+      return { error: err.message || 'Не удалось скопировать карточку' };
     } finally {
       exportingQuote = false;
       button.disabled = false;
@@ -3885,8 +3940,7 @@
   function cancelDraft() {
     pop = null;
     quoteRects = null;
-    quoteNotice('');
-    if (CSS.highlights) CSS.highlights.delete('draft');
+    quoteNotice('');    if (CSS.highlights) CSS.highlights.delete('draft');
   }
   const popDirty = () => !!pop && !quotePop.hidden && (pop.mode === 'draft' ? qpBody.value.trim().length > 0 : qpBody.value !== pop.body0);
   function hideQuotePop() { quotePop.hidden = true; $('qp-suggest').hidden = true; $('qp-link-suggest').hidden = true; cancelDraft(); }
@@ -3895,63 +3949,60 @@
     $('qp-save').hidden = !(draft || popDirty());
     $('qp-cancel').hidden = !draft;
     $('qp-delete').hidden = draft;
-    $('qp-export').hidden = pop.kind !== 'quote';
-    $('qp-delete').textContent = pop.kind === 'note' ? 'Удалить заметку' : 'Удалить цитату';
+    $('qp-export').hidden = !pop.text;
+    $('qp-delete').textContent = 'Удалить цитату';
   }
   function showBody(on, focus) {
     $('qp-body-wrap').hidden = !on;
-    $('qp-addthought').hidden = on || pop.kind === 'note';
+    $('qp-addthought').hidden = on;
     if (on) { autoGrow(qpBody); if (focus) setTimeout(() => qpBody.focus(), 30); }
   }
   function openPop(p, rects, status) {
     infoCard.hidden = true; R.cardToken = null;
     quotePop.hidden = true; $('qp-suggest').hidden = true; $('qp-link-suggest').hidden = true;
     if (CSS.highlights) CSS.highlights.delete('draft');
-    pop = p;
-    quoteRects = rects;
+    pop = p;    quoteRects = rects;
     quoteNotice('');
-    quotePop.dataset.kind = p.kind;
     $('qp-status').textContent = status;
     $('qp-text').textContent = shorten(p.text || '', 240);
     $('qp-text').hidden = !p.text;
     qpBody.value = p.body0 || '';
-    qpBody.placeholder = p.kind === 'note' ? 'Ваша мысль…' : 'Мысль к цитате…';
+    qpBody.placeholder = 'Мысль к цитате…';
     $('qp-tag-input').value = '';
     renderQuoteTags();
-    showBody(p.kind === 'note' || !!p.body0, p.mode === 'draft' && p.kind === 'note');
+    showBody(!!p.body0);
     syncPopButtons();
     placeNear(quotePop, rects, true);
     $('qp-content').scrollTop = 0;
   }
-  function startDraft(s, rects, kind) {
+  function startDraft(s, rects) {
     window.getSelection().removeAllRanges();
     const same = (x) => x.ch === R.ch && x.off === s.off && x.len === s.len;
-    const dup = kind === 'note' ? bookNotes().find(same) : bookQuotes().find(same);
+    const dup = allItems().find(same);
     if (dup) {
-      if (native && kind === 'quote') {
+      if (native && dup.kind === 'quote') {
         const ctx = noteCtx();
-        writeItem(Object.assign({ kind }, dup), ctx).then((p) => p && markItemExported(ctx.id, kind, dup.id, p)).catch(() => {});
+        writeItem(dup, ctx).then((p) => p && markItemExported(ctx.id, dup.kind, dup.id, p)).catch(() => {});
       }
-      openSaved(Object.assign({ kind }, dup), rects, kind === 'note' ? 'Эта заметка уже есть' : 'Эта цитата уже сохранена'); return;
+      openSaved(dup, rects, 'Эта цитата уже сохранена'); return;
     }
-    openPop({ mode: 'draft', kind, s, text: s.text, tags: [], body0: '' }, rects, kind === 'note' ? 'Новая заметка' : 'Новая цитата');
+    openPop({ mode: 'draft', kind: 'quote', s, text: s.text, tags: [], body0: '' }, rects, 'Новая цитата');
     try { if (window.Highlight) CSS.highlights.set('draft', new Highlight(rangeAt(s.off, s.len))); } catch (e) { /* ок */ }
   }
   function openSaved(it, rects, status) {
     openPop({ mode: 'saved', kind: it.kind, id: it.id, text: it.text, tags: it.tags || [], body0: (it.kind === 'note' ? it.body : it.note) || '' },
-      rects, status || (it.kind === 'note' ? 'Заметка' : 'Цитата'));
+      rects, status || 'Цитата');
   }
   async function commitPop() {
     if (!pop) return;
     quoteNotice('');
     const body = qpBody.value.replace(/\s+$/, '');
-    if (pop.kind === 'note' && !body.trim()) { qpBody.focus(); quoteNotice('Напишите мысль — или нажмите «Отмена»', true); return; }
     $('qp-save').disabled = true;
     try {
       if (pop.mode === 'draft') {
         const { kind, s, tags } = pop;
         if (CSS.highlights) CSS.highlights.delete('draft');
-        const { it, status } = await saveItem(kind, s, tags, body);
+        const { it, status } = await saveQuote(s, tags, body);
         if (!it) throw new Error('запись не сохранилась');
         pop = { mode: 'saved', kind, id: it.id, text: it.text, tags: it.tags, body0: body };
         $('qp-status').textContent = status;
@@ -3981,13 +4032,13 @@
       $('qp-save').disabled = false;
     }
     if (!pop) return;
-    showBody(pop.kind === 'note' || !!body.trim(), false);
+    showBody(!!body.trim(), false);
     syncPopButtons();
     refreshLists();
   }
   function refreshLists() {
     if (!$('q-list').hidden) renderQuotesList();
-    if (!$('n-list').hidden) renderNotesList();
+    if (!$('n-list').hidden && $('bn-edit')?.hidden !== false) renderBookImpression();
   }
   const popTags = () => pop ? pop.tags : [];
   function renderQuoteTags() {
@@ -4012,12 +4063,12 @@
     applyTags(popTags().filter((t) => t !== b.dataset.tag));
   });
   $('qp-addthought').onclick = () => showBody(true, true);
-  $('qp-export').onclick = async (ev) => {
-    if (pop?.kind !== 'quote' || !R.book) return;
+  qpShare.onclick = async () => {
+    if (!pop?.text || !R.book) return;
     const openedQuote = pop;
-    const text = pop.mode === 'draft' ? pop.s.text : originalQuoteText(quoteById(pop.id));
+    const text = pop.mode === 'draft' ? pop.s.text : originalQuoteText(itemById(pop.kind, pop.id));
     quoteNotice('');
-    const result = await exportQuote(text, ev.currentTarget);
+    const result = await copyQuoteCard(text, qpShare);
     if (pop === openedQuote && !quotePop.hidden && result) quoteNotice(result.error || result.message || '', !!result.error);
   };
   qpBody.addEventListener('input', () => { autoGrow(qpBody); if (pop) syncPopButtons(); });
@@ -4149,7 +4200,7 @@
     paintQuotes(); refreshLists();
     if (native && it.file) LS.set('pendingDeletes', LS.get('pendingDeletes', []).concat({ file: it.file, id: it.id }));
     let undone = false;
-    toastAction(kind === 'note' ? 'Заметка удалена' : 'Цитата удалена', 'Отменить', () => {
+    toastAction('Цитата удалена', 'Отменить', () => {
       undone = true;
       LS.set('pendingDeletes', LS.get('pendingDeletes', []).filter((d) => d.id !== it.id));
       const store = kind === 'note' ? 'notes' : 'quotes';
@@ -4164,32 +4215,28 @@
       await removeItemBlock(it.file, it.id);
     });
   }
-  const deleteQuote = (q) => deleteItem('quote', q);
 
-  // у каждого тега свой постоянный цвет; цитата — заливка, заметка — пунктир
+  // у каждого тега свой постоянный цвет
   const TAG_COLORS = ['#e8603c', '#d4972a', '#7d9a36', '#2c9a8c', '#4a7fc4', '#8b5bb0', '#c94f7c', '#6f7d93'];
-  const NOTE_DEFAULT = 4; // синий
   const tagIdx = (t) => hash(String(t).toLowerCase()) % TAG_COLORS.length;
   const tagColor = (t) => TAG_COLORS[tagIdx(t)];
   (function tagStyles() {
     const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(',');
     const st = document.createElement('style');
     st.textContent = TAG_COLORS.map((c, i) =>
-      '::highlight(quote-' + i + ') { background-color: rgba(' + rgb(c) + ', .15); text-decoration: underline; text-decoration-color: rgba(' + rgb(c) + ', .75); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }\n' +
-      '::highlight(note-' + i + ') { background-color: rgba(' + rgb(c) + ', .06); text-decoration: underline dotted; text-decoration-color: rgba(' + rgb(c) + ', .9); text-decoration-thickness: 2px; text-underline-offset: 4px; }').join('\n');
+      '::highlight(quote-' + i + ') { background-color: rgba(' + rgb(c) + ', .15); text-decoration: underline; text-decoration-color: rgba(' + rgb(c) + ', .75); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }').join('\n');
     document.head.appendChild(st);
   })();
   const tagChip = (t, cls) => '<span class="' + (cls || 'tag-mini') + '" style="--tc:' + tagColor(t) + '">#' + esc(t) + '</span>';
-  const itemColor = (it) => it.tags && it.tags.length ? tagColor(it.tags[0]) : (it.kind === 'note' ? TAG_COLORS[NOTE_DEFAULT] : TAG_COLORS[0]);
+  const itemColor = (it) => it.tags && it.tags.length ? tagColor(it.tags[0]) : TAG_COLORS[0];
 
   // подсветка записей на странице + значки ✎ на полях
-  const HL_KEYS = ['quote'].concat(TAG_COLORS.map((c, i) => 'quote-' + i), TAG_COLORS.map((c, i) => 'note-' + i));
+  const HL_KEYS = ['quote'].concat(TAG_COLORS.map((c, i) => 'quote-' + i));
   function paintQuotes() {
     if (!window.Highlight || !CSS.highlights || !R.book || !R.nodes) return;
     const groups = {};
     for (const it of allItems()) if (it.ch === R.ch) {
-      const key = it.kind === 'note' ? 'note-' + (it.tags && it.tags.length ? tagIdx(it.tags[0]) : NOTE_DEFAULT)
-        : (it.tags && it.tags.length ? 'quote-' + tagIdx(it.tags[0]) : 'quote');
+      const key = it.tags && it.tags.length ? 'quote-' + tagIdx(it.tags[0]) : 'quote';
       try { (groups[key] = groups[key] || []).push(rangeAt(it.off, it.len)); } catch (e) { /* ок */ }
     }
     for (const k of HL_KEYS) {
@@ -4249,7 +4296,7 @@
   window.__cancelDraft = () => cancelDraft();
   window.__popDirty = () => popDirty();
   window.__confirmLeave = () => confirmLeave();
-  // клик по подсвеченной записи — её окошко (заметка важнее цитаты)
+  // клик по подсвеченному фрагменту — его цитата
   function quoteAtPoint(x, y) {
     const list = allItems().filter((it) => it.ch === R.ch);
     if (!list.length || !document.caretRangeFromPoint) return null;
@@ -4257,7 +4304,7 @@
     if (!cr || !flow.contains(cr.startContainer)) return null;
     const off = logAt(cr.startContainer, cr.startOffset);
     const hit = list.filter((it) => off >= it.off && off <= it.off + it.len);
-    return hit.find((it) => it.kind === 'note') || hit[0] || null;
+    return hit.find((it) => it.kind === 'quote') || hit[0] || null;
   }
 
   // текст мысли: ссылки [[…]] — просто цветным словом
@@ -4265,43 +4312,51 @@
 
   // вкладка «Цитаты»
   function renderQuotesList() {
-    const list = bookQuotes();
-    $('q-list').innerHTML = list.length ? list.map((q) =>
-      '<div class="bm-row"><button class="toc-item bm" data-qid="' + q.id + '" style="--tc:' + (q.tags && q.tags.length ? tagColor(q.tags[0]) : 'var(--faint)') + '"><span class="bm-snippet q-snip">' + esc(q.text) + '</span>' +
-      (q.note ? '<span class="n-body small">' + wikiHtml(shorten(q.note, 200)) + '</span>' : '') +
-      '<span class="bm-meta">' + Math.round(q.pct * 100) + '%' + (q.chapter ? ' · ' + esc(q.chapter) : '') +
-      '</span>' + ((q.tags || []).length ? '<span class="tag-row">' + q.tags.map((t) => tagChip(t)).join('') + '</span>' : '') + '</button>' +
-      '<button class="icon-btn bm-del" data-qdel="' + q.id + '" title="Удалить цитату"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>').join('')
+    const list = allItems();
+    $('q-list').innerHTML = list.length ? list.map((q) => {
+      const body = q.kind === 'note' ? q.body : q.note;
+      return '<div class="bm-row" data-qkind="' + q.kind + '"><button class="toc-item bm" data-qid="' + esc(q.id) + '" style="--tc:' + (q.tags && q.tags.length ? tagColor(q.tags[0]) : 'var(--faint)') + '">' +
+        (q.text ? '<span class="bm-snippet q-snip">' + esc(q.text) + '</span>' : '') +
+        (body ? '<span class="n-body small">' + wikiHtml(shorten(body, 200)) + '</span>' : '') +
+        '<span class="bm-meta">' + Math.round((q.pct || 0) * 100) + '%' + (q.chapter ? ' · ' + esc(q.chapter) : '') +
+        '</span>' + ((q.tags || []).length ? '<span class="tag-row">' + q.tags.map((t) => tagChip(t)).join('') + '</span>' : '') + '</button>' +
+        '<button class="icon-btn bm-del" data-qdel="' + esc(q.id) + '" title="Удалить цитату"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
+    }).join('')
       : '<div class="list-empty">Цитат пока нет.<br>Выделите текст и нажмите <b>Цитата</b>.</div>';
   }
   $('q-list').addEventListener('click', (ev) => {
-    const del = ev.target.closest('[data-qdel]');
-    if (del) { const q = quoteById(del.dataset.qdel); if (q) deleteQuote(q); return; }
-    const b = ev.target.closest('[data-qid]'); if (!b) return;
-    const q = quoteById(b.dataset.qid); if (!q) return;
-    previewInBook(q.ch, q.off);
+    const row = ev.target.closest('[data-qkind]'), button = ev.target.closest('[data-qid], [data-qdel]');
+    if (!row || !button) return;
+    const kind = row.dataset.qkind;
+    const item = itemById(kind, button.dataset.qid || button.dataset.qdel);
+    if (!item) return;
+    if (button.dataset.qdel) deleteItem(kind, item);
+    else previewInBook(item.ch, item.off);
   });
 
-  // вкладка «Заметки»: мысли о книге + заметки по ходу чтения (и мысли к цитатам)
-  function renderNotesList() {
+  // вкладка «О книге»: впечатление читателя и сведения из файла
+  function renderBookImpression() {
     const bt = (allBookThoughts()[R.id] || {}).body || '';
-    const thoughts = allItems().filter((it) => it.kind === 'note' || it.note);
+    const { series, annotation, publication } = R.book;
+    const facts = [
+      ['Серия', series],
+      ['Издательство', publication?.publisher],
+      ['Год издания', publication?.year],
+      ['ISBN', publication?.isbn],
+    ].filter(([, value]) => value);
+    const info = facts.length
+      ? '<div class="bn-card"><div class="bn-head">Сведения об издании</div><dl class="bn-facts">' +
+        facts.map(([label, value]) => '<div><dt>' + label + '</dt><dd>' + esc(value) + '</dd></div>').join('') + '</dl></div>'
+      : '';
     $('n-list').innerHTML =
       '<div class="bn-card" id="bn-card">' +
-        '<div class="bn-head">О книге</div>' +
+        '<div class="bn-head">Общее впечатление</div>' +
         '<div class="bn-view' + (bt ? '' : ' is-empty') + '" id="bn-view">' + (bt ? wikiHtml(bt).replace(/\n/g, '<br>') : 'Впечатление о книге…') + '</div>' +
         '<div class="bn-edit" id="bn-edit" hidden><div class="ta-wrap"><textarea id="bn-ta" placeholder="Мои мысли о книге…"></textarea><div class="qp-suggest link-suggest" id="bn-link-suggest" hidden></div></div>' +
           '<div class="bn-foot"><button class="link-btn" id="bn-cancel">Отмена</button><button class="qp-save" id="bn-save">Сохранить</button></div></div>' +
-      '</div>' +
-      (thoughts.length ? thoughts.map((it) => {
-        const body = it.kind === 'note' ? it.body : it.note;
-        return '<div class="bm-row"><button class="toc-item bm" data-nk="' + it.kind + '" data-nid="' + it.id + '" style="--tc:' + itemColor(it) + '">' +
-          (it.text ? '<span class="n-frag' + (it.kind === 'quote' ? ' is-quote' : '') + '">' + esc(shorten(it.text, 140)) + '</span>' : '') +
-          '<span class="n-body">' + wikiHtml(body || '') + '</span>' +
-          '<span class="bm-meta">' + Math.round(it.pct * 100) + '%' + (it.chapter ? ' · ' + esc(it.chapter) : '') + (it.kind === 'quote' ? ' · к цитате' : '') + '</span>' +
-          ((it.tags || []).length ? '<span class="tag-row">' + it.tags.map((t) => tagChip(t)).join('') + '</span>' : '') + '</button>' +
-          (it.kind === 'note' ? '<button class="icon-btn bm-del" data-ndel="' + it.id + '" title="Удалить заметку"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' : '') + '</div>';
-      }).join('') : '<div class="list-empty">Заметок по ходу чтения пока нет.<br>Выделите текст и нажмите <b>Заметка</b>.</div>');
+      '</div>' + info +
+      (annotation ? '<div class="bn-card"><div class="bn-head">Аннотация</div><div class="bn-annotation">' + annotation + '</div></div>' : '');
+    $('n-list').querySelectorAll('.bn-annotation a').forEach((link) => link.replaceWith(...link.childNodes));
     const ta = $('bn-ta');
     attachLinkSuggest(ta, $('bn-link-suggest'));
     ta.addEventListener('input', () => autoGrow(ta));
@@ -4312,17 +4367,10 @@
       const body = ta.value.replace(/\s+$/, '');
       const ctx = noteCtx();
       const status = await saveBookThoughts(body, ctx);
-      if (R.book && R.id === ctx.id) renderNotesList();
+      if (R.book && R.id === ctx.id) renderBookImpression();
       toast(status.message, status.failed ? 5000 : undefined);
     };
   }
-  $('n-list').addEventListener('click', (ev) => {
-    const del = ev.target.closest('[data-ndel]');
-    if (del) { const n = noteById(del.dataset.ndel); if (n) deleteItem('note', n); return; }
-    const b = ev.target.closest('[data-nid]'); if (!b) return;
-    const it = itemById(b.dataset.nk, b.dataset.nid); if (!it) return;
-    previewInBook(it.ch, it.off);
-  });
 
   // ---------- управление тегами ----------
   // Теги хранятся у самих записей (цитат и заметок) + список недавних для подсказок.
@@ -4620,14 +4668,13 @@
     const body = it.kind === 'note' ? it.body : it.note;
     const tags = (it.tags || []).map((t) => tagChip(t)).join('');
     const where = withBook ? esc(bookLabel(it.book).title) + ' · ' : '';
-    return '<div class="nb-card' + (it.kind === 'note' ? ' is-note' : '') + '" data-nbi="' + i + '" style="--tc:' + itemColor(it) + '" title="Открыть в книге">' +
-      (it.text ? '<div class="nb-t">' + esc(it.kind === 'note' ? shorten(it.text, 320) : it.text) + '</div>' : '') +
+    return '<div class="nb-card" data-nbi="' + i + '" style="--tc:' + itemColor(it) + '" title="Открыть в книге">' +
+      (it.text ? '<div class="nb-t">' + esc(it.text) + '</div>' : '') +
       (body ? '<div class="nb-m">' + wikiHtml(body) + '</div>' : '') +
       '<div class="nb-f">' + tags + '<span>' + where + Math.round((it.pct || 0) * 100) + '% · ' + uiDate(it.t) + '</span><span class="nb-go">открыть →</span></div></div>';
   }
   function renderNotebook() {
     const items = everyItem();
-    const thoughts = allBookThoughts();
     const q = normQ(NB.query.trim());
     const labels = {};
     const lab = (id) => labels[id] || (labels[id] = bookLabel(id));
@@ -4637,7 +4684,6 @@
       bookCount[it.book] = (bookCount[it.book] || 0) + 1;
       bookLast[it.book] = Math.max(bookLast[it.book] || 0, it.t || 0);
     }
-    for (const id of Object.keys(thoughts)) if ((thoughts[id].body || '').trim()) bookLast[id] = Math.max(bookLast[id] || 0, thoughts[id].t || 0);
     if (NB.tag && !tagCount[NB.tag]) NB.tag = null;
     if (NB.book && !(NB.book in bookLast)) NB.book = null;
     const hay = (it) => normQ([it.text, it.note, it.body, it.chapter, (it.tags || []).map((t) => '#' + t).join(' '), lab(it.book).title, lab(it.book).author].join(' '));
@@ -4659,15 +4705,15 @@
     // справа: записи
     NB.cards = [];
     const main = $('nb-main');
-    if (!items.length && !booksSorted.length) {
-      main.innerHTML = '<div class="nb-empty"><div class="nb-empty-q">«</div><h2>Здесь соберутся ваши цитаты и мысли</h2><p>Из всех книг сразу — с поиском и тегами. Выделите текст в&nbsp;книге и&nbsp;нажмите <b>Цитата</b> или <b>Заметка</b>.</p></div>';
+    if (!items.length) {
+      main.innerHTML = '<div class="nb-empty"><div class="nb-empty-q">«</div><h2>Здесь соберутся ваши цитаты</h2><p>Выделите текст в&nbsp;книге и&nbsp;нажмите <b>Цитата</b>. К сохранённому фрагменту можно добавить мысль и теги.</p></div>';
       return;
     }
     const nBooks = new Set(list.map((it) => it.book)).size;
     let head = '';
     if (NB.tag || NB.book || q) {
       const what = [NB.tag ? 'с тегом ' + tagChip(NB.tag) : '', NB.book ? 'из книги «' + esc(lab(NB.book).title) + '»' : '', q ? 'по запросу «' + esc(NB.query.trim()) + '»' : ''].filter(Boolean).join(' ');
-      head = '<div class="nb-head"><span class="nb-kicker">Записи</span> ' + what + '<span class="nb-sum"> · ' + recCount(list.length) + (nBooks > 1 ? ' в ' + nBooks + ' ' + plural(nBooks, 'книге', 'книгах', 'книгах') : '') + '</span>' +
+      head = '<div class="nb-head"><span class="nb-kicker">Цитаты</span> ' + what + '<span class="nb-sum"> · ' + recCount(list.length) + (nBooks > 1 ? ' в ' + nBooks + ' ' + plural(nBooks, 'книге', 'книгах', 'книгах') : '') + '</span>' +
         '<button class="link-btn nb-reset" data-nb-reset="1">сбросить</button></div>';
     }
     let html = '';
@@ -4677,26 +4723,25 @@
     } else {
       const groups = {};
       for (const it of list) (groups[it.book] = groups[it.book] || []).push(it);
-      const ids = booksSorted.filter((id) => groups[id] || (!NB.tag && (!NB.book || NB.book === id) && thoughts[id] && (thoughts[id].body || '').trim() && (!q || normQ(thoughts[id].body + ' ' + lab(id).title + ' ' + lab(id).author).includes(q))));
+      const ids = booksSorted.filter((id) => groups[id]);
       let shown = 0;
       for (const id of ids) {
         if (shown > 800) break;
         const g = (groups[id] || []).sort((a, b) => a.ch - b.ch || a.off - b.off);
         shown += g.length;
-        const bt = !NB.tag && thoughts[id] && (thoughts[id].body || '').trim();
         const b = lab(id);
         html += '<section class="nb-group"><button class="nb-gh" data-nb-openbook="' + esc(id) + '" title="Продолжить чтение">' + coverHtml(b.m, b.name) +
           '<span class="nb-gt"><b>' + esc(b.title) + '</b>' + (b.author ? '<span>' + esc(b.author) + '</span>' : '') + '</span></button>' +
           '<div class="nb-cards">' +
-          (bt ? '<div class="nb-card is-book" data-nb-openbook="' + esc(id) + '"><div class="nb-kicker">О книге</div><div class="nb-m">' + wikiHtml(thoughts[id].body) + '</div></div>' : '') +
           g.map((it) => nbCard(it, false)).join('') + '</div></section>';
       }
     }
     main.innerHTML = head + (html || '<p class="nothing">Ничего не найдено</p>');
   }
   function syncLibTabs() {
+    if (NB.view !== 'pads') PADV.spread?.stop();
     document.querySelectorAll('#lib-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === NB.view));
-    $('search').placeholder = NB.view === 'notebook' ? 'Искать в записях' : NB.view === 'pads' ? 'Искать в блокнотах' : 'Название или автор';
+    $('search').placeholder = NB.view === 'notebook' ? 'Искать в цитатах' : NB.view === 'pads' ? 'Искать в блокнотах' : 'Название или автор';
     document.getElementById('library').classList.toggle('nb-mode', NB.view === 'notebook');
     document.getElementById('library').classList.toggle('pads-mode', NB.view === 'pads');
   }
@@ -4710,49 +4755,61 @@
     renderLibrary();
   };
 
-  // «Вспомнить»: раз в день — одна из старых цитат или мыслей
+  // «Вспомнить»: подборка старых цитат или мыслей на день
   const todayKey = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
   const remKey = (it) => it.book + '#' + it.id;
   function rememberPool() {
     const now = Date.now();
     return everyItem().filter((it) => (it.text || it.body) && now - (it.t || 0) > 18 * 3600e3 && L.entries.some((e) => e.id === it.book));
   }
-  function pickRemember(force) {
-    const pool = rememberPool();
-    if (!pool.length) return null;
+  function pickRemember(pool, force) {
     const st = LS.get('remember', {});
-    if (!force && st.day === todayKey()) { const cur = pool.find((it) => remKey(it) === st.key); if (cur) return cur; }
-    const seen = st.seen || [];
-    let cand = pool.filter((it) => !seen.includes(remKey(it)) && remKey(it) !== st.key);
-    if (!cand.length) cand = pool.filter((it) => remKey(it) !== st.key);
-    if (!cand.length) cand = pool;
-    const it = cand[Math.floor(Math.random() * cand.length)];
-    LS.set('remember', { day: todayKey(), key: remKey(it), seen: [remKey(it)].concat(seen.filter((k) => k !== remKey(it))).slice(0, Math.max(0, Math.min(60, pool.length - 1))) });
-    return it;
+    const day = todayKey(), count = Math.min(2, pool.length);
+    const previous = Array.isArray(st.keys) ? st.keys.slice(0, count) : [st.key];
+    const seen = Array.isArray(st.seen) ? st.seen : [];
+    const selected = !force && st.day === day
+      ? previous.map((key) => pool.find((it) => remKey(it) === key)).filter(Boolean)
+      : [];
+    if (selected.length === count) return selected;
+    while (selected.length < count) {
+      const available = pool.filter((it) => !selected.some((other) => remKey(other) === remKey(it)));
+      if (!available.length) break;
+      const fresh = available.filter((it) => !previous.includes(remKey(it)));
+      const unseen = fresh.filter((it) => !seen.includes(remKey(it)));
+      const candidates = unseen.length ? unseen : fresh.length ? fresh : available.filter((it) => remKey(it) !== previous[0]);
+      const choices = candidates.length ? candidates : available;
+      selected.push(choices[Math.floor(Math.random() * choices.length)]);
+    }
+    const keys = selected.map(remKey);
+    LS.set('remember', { day, keys, seen: [...new Set(keys.concat(seen))].slice(0, 60) });
+    return selected;
   }
   function renderRemember(force) {
     const box = $('remember');
-    const it = S.remember !== false && NB.view === 'books' && !L.query.trim() && L.entries.length ? pickRemember(force) : null;
-    if (!it) { box.hidden = true; R.remItem = null; return; }
-    R.remItem = it;
-    const b = bookLabel(it.book);
-    const body = it.kind === 'note' ? it.body : it.note;
-    box.innerHTML = '<div class="rm-kicker">Из прочитанного</div>' +
-      (it.text ? '<div class="rm-quote' + (it.kind === 'note' ? ' is-frag' : '') + '">' + esc(shorten(it.text, 420)) + '</div>' : '') +
-      (body ? '<div class="rm-thought">' + wikiHtml(shorten(body, 300)) + '</div>' : '') +
-      '<div class="rm-src">' + (b.author ? '<b>' + esc(b.author) + '</b> · ' : '') + esc(b.title) + ' · ' + (it.kind === 'note' ? 'заметка от ' : 'сохранено ') + uiDate(it.t) + '</div>' +
-      '<div class="rm-actions"><button class="rm-pri" data-rm="open">Открыть в книге</button>' +
-      (rememberPool().length > 1 ? '<button data-rm="more">Ещё одну</button>' : '') +
-      '<button data-rm="off">Больше не показывать</button></div>';
+    const pool = S.remember !== false && NB.view === 'books' && !L.query.trim() && L.entries.length ? rememberPool() : [];
+    if (!pool.length) { box.hidden = true; R.remItems = []; return; }
+    const items = R.remItems = pickRemember(pool, force);
+    box.classList.toggle('rm-single', items.length < 2);
+    box.innerHTML = '<div class="rm-head"><div class="rm-kicker">Из прочитанного</div><div class="rm-actions">' +
+      (pool.length > 1 ? '<button data-rm="more"' + (pool.length === 2 ? ' class="rm-more-narrow"' : '') + '>Ещё</button>' : '') +
+      '<button data-rm="off">Больше не показывать</button></div></div>' +
+      '<div class="rm-cards">' + items.map((it, index) => {
+        const b = bookLabel(it.book), body = it.kind === 'note' ? it.body : it.note;
+        return '<article class="rm-card">' +
+          (it.text ? '<div class="rm-quote">' + esc('«' + shorten(it.text, 420) + '»') + '</div>' : '') +
+          (body ? '<div class="rm-thought">' + wikiHtml(shorten(body, 300)) + '</div>' : '') +
+          '<div class="rm-src">' + (b.author ? '<b>' + esc(b.author) + '</b> · ' : '') + esc(b.title) + ' · сохранено ' + uiDate(it.t) + '</div>' +
+          '<button class="rm-pri" data-rm="open" data-rm-index="' + index + '">Открыть в книге</button></article>';
+      }).join('') + '</div>';
     if (force) { box.classList.remove('rm-in'); void box.offsetWidth; box.classList.add('rm-in'); }
     box.hidden = false;
   }
   function libClick(ev) {
     const rm = ev.target.closest('[data-rm]');
     if (rm) {
-      const it = R.remItem;
+      const it = R.remItems?.[Number(rm.dataset.rmIndex)];
       if (rm.dataset.rm === 'open' && it) openLibraryItem(it.book, it);
-      else if (rm.dataset.rm === 'more') renderRemember(true);
+      else if (rm.dataset.rm === 'more') { renderRemember(true); renderShelves(); }
       else if (rm.dataset.rm === 'off') {
         changeSetting('remember', false);
         toastAction('Блок «Вспомнить» скрыт. Вернуть можно в настройках «Аа».', 'Вернуть', () => changeSetting('remember', true), 7000);
@@ -4786,11 +4843,27 @@
   // листы разделены строкой «---».
   const pads = () => LS.get('pads', {});
   const PAD_COLORS = { ivory: ['Слоновая кость', null], sand: ['Песочный', '#e3d0a7'], sage: ['Серо-зелёный', '#c4cfc4'], rose: ['Серо-розовый', '#d7c4c6'] };
-  const PAD_OPTIONS = { font: 'book', paper: 'ivory', rule: 'plain', navigation: 'pages', numbers: true };
-  const padOptions = (id) => ({ ...PAD_OPTIONS, ...LS.get('padOptions', {})[id] });
+  const PAD_INKS = { graphite: ['Графит', null], blue: ['Тёмно-синие', '#203858'], sepia: ['Сепия', '#4f3425'], burgundy: ['Бордовые', '#552c3b'] };
+  const PAD_OPTIONS = { font: 'book', size: 16, paper: 'ivory', ink: 'graphite', rule: 'plain', navigation: 'pages', numbers: true, pinned: false };
+  const padOptions = (id) => {
+    const options = { ...PAD_OPTIONS, ...LS.get('padOptions', {})[id] };
+    if (!Number.isInteger(options.size) || options.size < 12 || options.size > 24) options.size = PAD_OPTIONS.size;
+    return options;
+  };
+  function persistPadOption(id, key, value) {
+    const all = LS.get('padOptions', {});
+    const options = { ...padOptions(id), [key]: value };
+    LS.set('padOptions', { ...all, [id]: options });
+    return options;
+  }
+  function changePadOption(key, value) {
+    if (!R.book) return;
+    if (PADE) PADE.setOption(key, value);
+    else { persistPadOption(R.id, key, value); syncPadSettings(); }
+  }
   const PAD_IMAGE = /^!\[Картинка\]\(polka-pad-image:([a-z0-9]+)\/(\d+)\)$/;
-  const PAD_LINK = /^\[Открыть в книге\]\((polka:\/\/open\?book=[^)\s]+)\)$/;
-  const padEmbedded = (text) => PAD_IMAGE.test(text) || PAD_LINK.test(text);
+  const PAD_LINK = /^\[Открыть в книге\]\(polka:\/\/open\?book=[^)\s]+\)$/;
+  const withoutPadLinks = (page) => page.split('\n').filter((line) => !PAD_LINK.test(line)).join('\n');
   const diaryPadImages = new Set();
   const padImageKey = (key) => 'pad-image-' + key;
   async function readPadImage(key) {
@@ -4829,9 +4902,9 @@
       diaryPadImages.add(exported);
     }
   }
-  const padOf = (id) => { const x = pads()[id]; return x && Array.isArray(x.pages) ? x : null; };
-  const padText = (x) => (x ? x.pages.join('\n\n---\n\n').trim() : '');
-  const padEmpty = (x) => !x || !x.pages.some((pg) => pg.trim());
+  const padOf = (id) => { const x = pads()[id]; return x ? { ...x, pages: x.pages.map(withoutPadLinks) } : null; };
+  const padText = (x) => (x ? x.pages.map(withoutPadLinks).join('\n\n---\n\n').trim() : '');
+  const padEmpty = (x) => !x || !x.pages.some((pg) => withoutPadLinks(pg).trim());
   function padCtxFor(id) {
     if (R.book && R.id === id) return noteCtx();
     const m = L.metas[id] || {}, x = padOf(id) || {};
@@ -4865,16 +4938,17 @@
     if (md == null || R.book !== book) return;
     const lines = md.split('\n'), r = padRange(lines);
     if (!r) return;
-    const text = lines.slice(r.at + 1, r.e).join('\n').trim();
+    const text = lines.slice(r.at + 1, r.e).filter((line) => !PAD_LINK.test(line)).join('\n').trim();
     if (text && text !== padText(padOf(R.id))) savePad(R.id, text.split(/\n\s*---\s*\n/).map((x) => x.replace(/^\n+|\n+$/g, '')), false);
   }
-  function savePad(id, pages, toDiary) {
+  function savePad(id, pages, toDiary, continuations) {
     const all = pads();
     while (pages.length > 1 && !pages[pages.length - 1].trim()) pages.pop();
     if (padEmpty({ pages })) { if (!all[id]) return; delete all[id]; }
     else {
       const ctx = padCtxFor(id);
       all[id] = { pages: pages.slice(), t: Date.now(), title: ctx.title, author: ctx.author };
+      if (continuations?.some(Boolean)) all[id].continuations = continuations.slice(0, pages.length);
     }
     if (!LS.set('pads', all)) return;
     if (toDiary !== false) writePadNote(id).catch((e) => console.warn(e));
@@ -4883,11 +4957,8 @@
   function syncPadSettings() {
     const open = !!R.book && !$('pad').hidden;
     const settings = $('settings');
-    const tab = settings.querySelector('[data-tab="pad"]');
-    tab.hidden = !open;
-    if (!open && S.setTab === 'pad') S.setTab = 'text';
-    settings.classList.toggle('pad-aligned', open && S.setTab === 'pad');
-    if (!open) return;
+    settings.classList.toggle('pad-aligned', open || S.setTab === 'pad');
+    if (!R.book) return;
     const options = padOptions(R.id);
     settings.querySelectorAll('[data-pad-setting]').forEach((button) => {
       const active = options[button.dataset.padSetting] === button.dataset.v;
@@ -4895,24 +4966,25 @@
       button.setAttribute('aria-pressed', String(active));
     });
     $('set-pad-numbers').checked = options.numbers;
+    $('set-pad-pinned').checked = options.pinned;
+    $('set-pad-size').value = options.size;
+    $('pad-size-value').textContent = options.size;
   }
 
-  function padSource(s) {
-    return { book: R.book, id: R.id, ch: R.ch, off: s.off, len: s.len };
-  }
-  function offerPadResult(source, text, result) {
-    if (!source?.book || source.book !== R.book || !result) return;
+  function offerPadResult(book, text, result) {
+    if (!book || book !== R.book || !result) return;
     const button = document.createElement('button');
-    button.className = 'link-btn ic-pad';
+    button.className = 'ic-pad';
     button.textContent = 'В блокнот';
     $('ic-body').append(button);
     try { placeNear(infoCard, JSON.parse(infoCard.dataset.anchor), true); } catch (e) { /* карточку уже закрыли */ }
     button.onclick = async () => {
-      if (source.book !== R.book) return;
-      const url = 'polka://open?book=' + encodeURIComponent(source.id) + '&ch=' + source.ch + '&off=' + source.off + '&len=' + source.len;
+      if (book !== R.book) return;
+      infoCard.hidden = true;
+      R.cardToken = null;
       await openPad();
-      if (source.book !== R.book || !PADE) return;
-      PADE.insertBlock(text.trim() + ' — ' + result.trim() + '\n[Открыть в книге](' + url + ')');
+      if (book !== R.book || !PADE) return;
+      PADE.insertBlock(text.trim() + ' — ' + result.trim());
       toast('Добавлено в блокнот');
     };
   }
@@ -4944,6 +5016,23 @@
       if (!blob) { if (text) E.pasteText(target, text); return; }
       E.insertImage(blob, target).catch(() => toast('Не удалось вставить картинку'));
     };
+    let pendingImageCopy = null;
+    const copyImage = (key) => {
+      const copy = (pendingImageCopy?.catch(() => {}) || Promise.resolve()).then(async () => {
+        const data = await readPadImage(key);
+        if (!data) throw new Error('Картинка недоступна');
+        await copyPadImage(data);
+      });
+      pendingImageCopy = copy;
+      const reset = () => { if (pendingImageCopy === copy) pendingImageCopy = null; };
+      copy.then(reset, reset);
+      return copy;
+    };
+    const pasteNative = async (target) => {
+      await pendingImageCopy;
+      const data = await native.padClipboardRead();
+      paste(data.image && new Blob([data.image], { type: 'image/png' }), target, data.text);
+    };
     host.onpaste = (ev) => {
       const item = Array.from(ev.clipboardData?.items || []).find((x) => x.kind === 'file' && x.type.startsWith('image/'));
       if (!item) {
@@ -4974,15 +5063,13 @@
         close();
         try {
           if ('copy' in action.dataset) {
-            const data = image && await readPadImage(image);
-            if (data) await copyPadImage(data);
+            if (image) await copyImage(image);
             else if (selected) {
               if (native?.padClipboardWrite) await native.padClipboardWrite({ text: selected });
               else await navigator.clipboard.writeText(selected);
             }
           } else if (native?.padClipboardRead) {
-            const data = await native.padClipboardRead();
-            paste(data.image && new Blob([data.image], { type: 'image/png' }), target, data.text);
+            await pasteNative(target);
           } else {
             const items = await navigator.clipboard.read();
             const item = items.find((x) => x.types.some((type) => type.startsWith('image/')));
@@ -4996,9 +5083,13 @@
       };
     };
     host.addEventListener('keydown', (ev) => {
-      if ((ev.ctrlKey || ev.metaKey) && ev.code === 'KeyC' && E.selectedImage) {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey) return;
+      if (ev.code === 'KeyC' && E.selectedImage) {
         ev.preventDefault();
-        readPadImage(E.selectedImage).then((data) => data && copyPadImage(data)).catch(fail);
+        copyImage(E.selectedImage).catch(fail);
+      } else if (ev.code === 'KeyV' && native?.padClipboardRead) {
+        ev.preventDefault();
+        pasteNative(input()).catch(fail);
       }
     }, { capture: true, signal: lifetime.signal });
   }
@@ -5014,70 +5105,118 @@
     opts = opts || {};
     const x = padOf(id);
     const E = { id, pages: x ? x.pages.slice() : [''], cur: 0, dirty: false, timer: null };
+    const continuations = E.pages.map((_, index) => index > 0 && x?.continuations?.[index] === true);
     host.innerHTML = '<textarea class="pad-ta" spellcheck="true" lang="ru" aria-label="Блокнот"></textarea>' +
       '<div class="pad-rich" hidden></div>' +
       '<div class="pad-folio" hidden><button class="pf-prev" aria-label="Предыдущий лист">‹</button><span class="pf-n"></span><button class="pf-next" aria-label="Следующий лист">›</button></div>';
     const ta = host.querySelector('.pad-ta'), folio = host.querySelector('.pad-folio'), rich = host.querySelector('.pad-rich');
+    const viewOnly = opts.viewOnly === true;
+    if (viewOnly) ta.readOnly = true;
+    let previewImages = [];
     let options = padOptions(id), visiblePage = 0;
+    if (viewOnly) options.navigation = 'pages';
     const paged = () => options.navigation !== 'scroll';
     ta.value = E.pages[0]; // первый show() сохраняет поле в текущий лист — поле должно быть заполнено
-    const commit = () => { if (!ta.hidden) E.pages[E.cur] = ta.value; };
+    const commit = () => { if (!viewOnly && !ta.hidden) E.pages[E.cur] = ta.value; };
     const number = folio.querySelector('.pf-n'), prev = folio.querySelector('.pf-prev'), next = folio.querySelector('.pf-next');
     function syncFolio() {
       const n = E.pages.length;
+      if (viewOnly) {
+        folio.hidden = !options.numbers || E.previewMissing === true;
+        prev.hidden = next.hidden = true;
+        number.textContent = E.cur + 1;
+        return;
+      }
       folio.hidden = !paged() ? !options.numbers : n < 2 && (!options.numbers || !E.pages[0].trim());
       number.hidden = !options.numbers;
       number.innerHTML = '<b>' + ((paged() ? E.cur : visiblePage) + 1) + '</b> / ' + n;
       prev.hidden = next.hidden = !paged();
       prev.disabled = E.cur === 0;
-      next.disabled = E.cur === n - 1;
+      next.disabled = E.cur === n - 1 && !E.pages[E.cur].trim();
     }
     const show = (i, caret, saveCurrent = true) => {
       if (saveCurrent) commit();
       E.cur = Math.max(0, Math.min(E.pages.length - 1, i));
       visiblePage = E.cur;
       ta.value = E.pages[E.cur];
+      if (paged()) {
+        ta.scrollTop = rich.scrollTop = 0;
+        host.style.removeProperty('--pad-paper-scroll');
+      }
       E.selectedImage = null;
-      ta.hidden = !paged() || ta.value.split('\n').some(padEmbedded);
+      ta.hidden = !paged() || ta.value.split('\n').some((line) => PAD_IMAGE.test(line));
       rich.hidden = !ta.hidden;
       if (ta.hidden) renderRich();
-      else { rich.replaceChildren(); E.ta = ta; }
+      else { rich.replaceChildren(); previewImages = []; E.ta = ta; }
       syncFolio();
+      opts.onLayout?.(E);
       if (caret != null) focusAt(E.cur, caret < 0 ? E.pages[E.cur].length : caret);
       else if (!paged()) rich.querySelector('[data-pad-page="' + E.cur + '"]')?.scrollIntoView({ block: 'nearest' });
     };
-    const saveSoon = () => { E.dirty = true; clearTimeout(E.timer); E.timer = setTimeout(E.save, 1000); };
-    E.save = () => { clearTimeout(E.timer); if (!E.dirty) return; commit(); E.dirty = false; savePad(E.id, E.pages.slice()); if (opts.onSave) opts.onSave(); };
-    E.applyAppearance = () => {
+    function nextSheet() {
+      commit();
+      if (E.cur === E.pages.length - 1) {
+        if (!E.pages[E.cur].trim()) return;
+        E.pages.push('');
+        continuations.push(false);
+      }
+      show(E.cur + 1, 0, false);
+    }
+    const saveSoon = () => {
+      if (viewOnly) return;
+      E.dirty = true; clearTimeout(E.timer); E.timer = setTimeout(E.save, 1000);
+    };
+    E.save = () => { clearTimeout(E.timer); if (!E.dirty) return; commit(); E.dirty = false; savePad(E.id, E.pages.slice(), true, continuations); if (opts.onSave) opts.onSave(); };
+    function applyAppearance() {
       host.dataset.padRule = options.rule;
       host.dataset.padFont = options.font;
+      host.dataset.padNavigation = options.navigation;
       host.style.setProperty('--pad-custom-paper', PAD_COLORS[options.paper]?.[1] || 'var(--pad-paper)');
-      host.style.setProperty('--pad-text-size', S.size + 'px');
+      host.style.setProperty('--pad-custom-ink', PAD_INKS[options.ink]?.[1] || 'var(--pad-ink)');
+      host.style.setProperty('--pad-text-size', options.size + 'px');
+      host.style.setProperty('--pad-line', lineStep() + 'px');
       host.querySelectorAll('.pad-rich-text').forEach(sizeText);
-    };
+      rich.querySelectorAll('.pad-image').forEach(layoutImageText);
+    }
     E.setOption = (key, value) => {
       commit();
       const hadFocus = host.contains(document.activeElement);
       const caret = cursorOffset(E.ta);
-      const all = LS.get('padOptions', {});
-      options = { ...options, [key]: value };
-      all[id] = options;
-      LS.set('padOptions', all);
-      E.applyAppearance();
+      const scrollAnchor = key === 'navigation' && value === 'pages' && !paged() ? scrollPosition() : null;
+      options = persistPadOption(id, key, value);
+      applyAppearance();
       if (key === 'navigation') {
-        const index = value === 'pages' ? visiblePage : E.cur;
-        const offset = index === E.cur ? caret : 0;
-        show(index, null, false);
-        focusAt(index, offset, hadFocus);
-      } else syncFolio();
+        revealPaginated(scrollAnchor?.index ?? E.cur, scrollAnchor?.caret ?? caret, hadFocus, paged());
+      } else if (key === 'size' || key === 'font') E.reflowAfterFont();
+      else syncFolio();
       syncPadSettings();
     };
     function cursorOffset(target) {
       if (!target || target === ta) return ta.selectionStart;
       const section = target.closest('[data-pad-page]');
       const fields = Array.from(section?.children || []);
-      const index = fields.indexOf(target);
-      return fields.slice(0, Math.max(0, index)).reduce((n, field) => n + chunkValue(field).length + 1, target.selectionStart);
+      const group = target.closest('.pad-around');
+      const index = fields.indexOf(group || target);
+      const prefix = group && target === group.lastElementChild ? group.firstElementChild.value.length : 0;
+      return fields.slice(0, Math.max(0, index)).reduce((n, field) => n + chunkValue(field).length + 1, prefix + target.selectionStart);
+    }
+    function scrollPosition() {
+      const view = rich.getBoundingClientRect();
+      const line = parseFloat(getComputedStyle(meter).lineHeight);
+      if (E.ta?.isConnected && !E.ta.hidden) {
+        const caretY = E.ta.getBoundingClientRect().top + textH(E.ta.value.slice(0, E.ta.selectionStart), E.ta.clientWidth) - line;
+        if (caretY >= view.top - 1 && caretY < view.bottom) return { index: E.cur, caret: cursorOffset(E.ta) };
+      }
+      for (const field of rich.querySelectorAll('textarea:not([hidden])')) {
+        const rect = field.getBoundingClientRect();
+        if (rect.bottom <= view.top || rect.top >= view.bottom) continue;
+        const local = rect.top >= view.top ? 0 : fittingPrefix(field.value, (text) => textH(text, field.clientWidth) <= view.top - rect.top + line);
+        return {
+          index: Number(field.closest('[data-pad-page]').dataset.padPage),
+          caret: cursorOffset(field) - field.selectionStart + local,
+        };
+      }
+      return { index: visiblePage, caret: 0 };
     }
     function focusAt(index, caret, focus = true) {
       let target = ta;
@@ -5085,9 +5224,17 @@
         const section = rich.querySelector('[data-pad-page="' + index + '"]');
         let last;
         for (const field of section?.children || []) {
-          if (field.tagName === 'TEXTAREA') {
-            last = field;
-            if (caret <= field.value.length) break;
+          const inputs = chunkInputs(field).filter((input) => !input.hidden);
+          if (inputs.length) {
+            last = inputs.at(-1);
+            if (caret <= chunkValue(field).length) {
+              for (const input of inputs) {
+                last = input;
+                if (caret <= input.value.length) break;
+                caret -= input.value.length;
+              }
+              break;
+            }
           }
           caret -= chunkValue(field).length + 1;
         }
@@ -5100,33 +5247,80 @@
       const offset = Math.max(0, Math.min(target.value.length, caret));
       target.setSelectionRange(offset, offset);
     }
-    const chunkValue = (node) => node.tagName === 'TEXTAREA' ? node.value : node.dataset.markdown;
+    const chunkInputs = (node) => node.tagName === 'TEXTAREA' ? [node] : Array.from(node.querySelectorAll('textarea'));
+    const chunkValue = (node) => node.dataset.markdown ?? chunkInputs(node).map((field) => field.value).join('');
     function richInput(section) {
       const index = Number(section.dataset.padPage);
       E.pages[index] = Array.from(section.children, chunkValue).join('\n');
       saveSoon();
     }
+    const lineStep = () => Math.round(options.size * 1.8);
+    const ruled = () => options.rule === 'lines' || options.rule === 'dots';
     function sizeText(field) {
       field.style.height = '0px';
-      field.style.height = field.scrollHeight + 'px';
+      field.style.height = Math.ceil(field.scrollHeight / lineStep()) * lineStep() + 'px';
     }
     let drawVersion = 0;
+    const imageRatios = opts.imageRatios || new Map();
+    function layoutImageText(figure) {
+      const group = figure.nextElementSibling;
+      if (!group?.classList.contains('pad-around')) return;
+      const [side, below] = chunkInputs(group);
+      const active = document.activeElement;
+      const selection = active === side || active === below
+        ? [active.selectionStart, active.selectionEnd].map((offset) => offset + (active === below ? side.value.length : 0))
+        : null;
+      const text = side.value + below.value;
+      const image = figure.dataset.markdown.match(PAD_IMAGE);
+      const { height: estimatedHeight, sideWidth } = imageMetrics(image);
+      const img = figure.querySelector('img');
+      const height = img?.naturalWidth ? img.offsetHeight : estimatedHeight;
+      const spacing = ruled() ? Math.ceil(height / lineStep()) * lineStep() - height : 20;
+      figure.style.setProperty('--pad-image-space', spacing + 'px');
+      const cut = sidePrefix(text, height, sideWidth);
+      const beside = sideWidth >= Math.max(82, options.size * 5) && height >= parseFloat(getComputedStyle(meter).lineHeight);
+      figure.classList.toggle('wrap-text', beside);
+      side.hidden = !beside;
+      side.style.width = sideWidth + 'px';
+      const sideValue = text.slice(0, cut), belowValue = text.slice(cut);
+      if (side.value !== sideValue) side.value = sideValue;
+      if (below.value !== belowValue) below.value = belowValue;
+      if (beside) sizeText(side);
+      sizeText(below);
+      if (selection) {
+        const focus = beside && selection[0] < cut ? side : below;
+        const offset = focus === below ? cut : 0;
+        if (active !== focus) focus.focus({ preventScroll: true });
+        focus.setSelectionRange(selection[0] - offset, selection[1] - offset);
+      }
+    }
     function renderRich() {
       const version = ++drawVersion;
       rich.replaceChildren();
+      previewImages = [];
       E.ta = null;
       const indexes = paged() ? [E.cur] : E.pages.map((_, index) => index);
       for (const index of indexes) {
         const section = document.createElement('div');
         section.className = 'pad-rich-page';
         section.dataset.padPage = index;
-        const addText = (lines) => {
+        const makeText = (value) => {
           const field = document.createElement('textarea');
           field.className = 'pad-rich-text';
-          field.value = lines.join('\n');
+          field.value = value;
           field.lang = 'ru';
           field.setAttribute('aria-label', 'Блокнот, лист ' + (index + 1));
-          field.oninput = () => { sizeText(field); richInput(section); };
+          if (viewOnly) { field.readOnly = true; return field; }
+          field.oninput = (event) => {
+            sizeText(field);
+            richInput(section);
+            if (!event.isComposing) {
+              const group = field.closest('.pad-around');
+              if (group) layoutImageText(group.previousElementSibling);
+              if (paged() && index === E.cur) fitCurrent();
+            }
+          };
+          field.oncompositionend = fitCurrent;
           field.onfocus = () => { E.ta = field; E.cur = index; selectImage(null); syncFolio(); };
           field.onpointerdown = () => selectImage(null);
           field.onkeydown = (event) => {
@@ -5135,31 +5329,36 @@
             else if (paged() && event.key === 'PageUp' && index > 0) { event.preventDefault(); show(index - 1, -1); }
             else if (paged() && event.key === 'PageDown') {
               event.preventDefault();
-              if (index === E.pages.length - 1 && E.pages[index].trim()) E.pages.push('');
-              show(index + 1, 0);
+              nextSheet();
             }
           };
-          section.append(field);
+          return field;
+        };
+        const addText = (lines) => {
+          const field = makeText(lines.join('\n'));
+          if (section.lastElementChild?.matches('.pad-image')) {
+            const group = document.createElement('div');
+            group.className = 'pad-around';
+            const side = makeText('');
+            side.classList.add('pad-side-text');
+            side.hidden = true;
+            field.classList.add('pad-below-text');
+            group.append(side, field);
+            section.append(group);
+          } else section.append(field);
           if (index === E.cur && !E.ta) E.ta = field;
         };
         let text = [];
         for (const line of E.pages[index].split('\n')) {
-          const image = line.match(PAD_IMAGE), link = line.match(PAD_LINK);
-          if (!image && !link) { text.push(line); continue; }
+          const image = line.match(PAD_IMAGE);
+          if (!image) { text.push(line); continue; }
           addText(text); text = [];
-          if (image) addImage(section, line, image, version);
-          else {
-            const open = document.createElement('button');
-            open.className = 'pad-source';
-            open.dataset.markdown = line;
-            open.textContent = 'Открыть в книге';
-            open.onclick = () => openLink(link[1]);
-            section.append(open);
-          }
+          addImage(section, line, image, version);
         }
         addText(text);
         rich.append(section);
         section.querySelectorAll('textarea').forEach(sizeText);
+        section.querySelectorAll('.pad-image').forEach(layoutImageText);
       }
     }
     function selectImage(fig) {
@@ -5191,34 +5390,71 @@
         if (event.key !== 'Delete' && event.key !== 'Backspace') return;
         event.preventDefault();
         const before = figure.previousElementSibling, after = figure.nextElementSibling;
-        before.value += (before.value && after.value ? '\n' : '') + after.value;
+        const beforeText = chunkValue(before), afterText = chunkValue(after);
+        const join = chunkInputs(before).at(-1);
+        join.value += (beforeText && afterText ? '\n' : '') + afterText;
         after.remove(); figure.remove();
-        sizeText(before); richInput(section); selectImage(null); before.focus();
+        sizeText(join); richInput(section); selectImage(null); join.focus();
+        if (before.matches('.pad-around')) layoutImageText(before.previousElementSibling);
+        fitCurrent();
       };
       handle.onkeydown = (event) => {
         if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
         event.preventDefault();
         width(parseInt(figure.style.width, 10) + (event.key === 'ArrowRight' ? 5 : -5));
+        layoutImageText(figure);
         richInput(section);
+        fitCurrent();
       };
       handle.onpointerdown = (event) => {
         if (event.button !== 0) return;
         event.preventDefault();
         handle.setPointerCapture(event.pointerId);
         const startX = event.clientX, startWidth = figure.getBoundingClientRect().width;
-        handle.onpointermove = (move) => width(100 * (startWidth + move.clientX - startX) / section.clientWidth);
-        handle.onlostpointercapture = () => { handle.onpointermove = null; richInput(section); };
+        handle.onpointermove = (move) => {
+          width(100 * (startWidth + move.clientX - startX) / section.clientWidth);
+          layoutImageText(figure);
+        };
+        handle.onlostpointercapture = () => { handle.onpointermove = null; richInput(section); fitCurrent(); };
       };
-      figure.append(img, handle);
+      if (viewOnly) {
+        figure.setAttribute('role', 'button');
+        figure.setAttribute('aria-label', 'Увеличить картинку');
+        figure.onpointerdown = figure.onfocus = null;
+        const enlarge = async () => {
+          const blob = await readPadImage(key);
+          if (!blob || !figure.isConnected) return;
+          const src = URL.createObjectURL(blob);
+          try {
+            await openZoom({ localName: 'img', src, getBoundingClientRect: () => img.getBoundingClientRect() });
+          } finally { URL.revokeObjectURL(src); }
+        };
+        figure.onclick = () => { enlarge().catch(console.warn); };
+        figure.onkeydown = (event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); figure.click(); }
+        };
+        figure.append(img);
+      } else figure.append(img, handle);
       section.append(figure);
-      readPadImage(key).then(async (blob) => {
+      const loading = readPadImage(key).then(async (blob) => {
         if (version !== drawVersion || !figure.isConnected) return;
         if (blob) {
           const url = URL.createObjectURL(blob);
           img.src = url;
-          try { await img.decode(); } catch (e) { /* картинка недоступна */ } finally { URL.revokeObjectURL(url); }
+          try {
+            await img.decode();
+            const ratio = img.naturalHeight / img.naturalWidth;
+            if (version !== drawVersion || !figure.isConnected) return;
+            if (imageRatios.get(key) !== ratio) {
+              imageRatios.set(key, ratio);
+              layoutImageText(figure);
+              if (opts.onImageRatio) opts.onImageRatio();
+              else fitCurrent();
+            }
+          } catch (e) { /* картинка недоступна */ } finally { URL.revokeObjectURL(url); }
         } else img.replaceWith(document.createTextNode('Картинка недоступна'));
       }).catch(() => { if (figure.isConnected) img.replaceWith(document.createTextNode('Картинка недоступна')); });
+      if (viewOnly) previewImages.push(loading);
     }
     function insertBlock(block, target = E.ta) {
       if (!target || !host.contains(target)) return;
@@ -5229,8 +5465,7 @@
       const left = before.endsWith('\n') || !before ? before : before + '\n';
       const right = after.startsWith('\n') || !after ? after : '\n' + after;
       E.pages[index] = left + block + right;
-      show(index, null, false);
-      focusAt(index, left.length + block.length + 1);
+      revealPaginated(index, left.length + block.length + 1, true);
       saveSoon();
       E.save();
     }
@@ -5244,11 +5479,12 @@
     };
     E.pasteText = (target, text) => {
       if (!host.contains(target) || host.getClientRects().length === 0) return;
+      target.focus({ preventScroll: true });
       target.setRangeText(text, target.selectionStart, target.selectionEnd, 'end');
       target.dispatchEvent(new Event('input'));
-      target.focus();
     };
     rich.onscroll = () => {
+      host.style.setProperty('--pad-paper-scroll', rich.scrollTop + 'px');
       if (paged()) return;
       const top = rich.getBoundingClientRect().top;
       const section = Array.from(rich.children).find((page) => page.getBoundingClientRect().bottom > top + 1);
@@ -5263,38 +5499,151 @@
     const lines = document.createElement('textarea'); lines.className = 'pad-ta'; lines.tabIndex = -1; lines.setAttribute('aria-hidden', 'true');
     lines.style.cssText = 'visibility:hidden;pointer-events:none;bottom:auto;height:0;min-height:0';
     host.appendChild(lines);
-    const textH = (t) => { lines.value = t; return lines.scrollHeight; };
+    const textH = (t, width) => {
+      lines.style.width = width == null ? '' : width + 'px';
+      lines.value = t;
+      return lines.scrollHeight;
+    };
     const onFirstLine = () => textH(ta.value.slice(0, ta.selectionStart)) <= textH('x');
     const onLastLine = () => textH(ta.value.slice(0, ta.selectionEnd)) >= textH(ta.value);
-    const split = (t) => { // сколько влезает на лист — по словам/строкам
-      if (fits(t)) return [t, ''];
+    function fittingPrefix(t, accept) {
+      if (accept(t)) return t.length;
       let lo = 0, hi = t.length;
-      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (fits(t.slice(0, mid))) lo = mid; else hi = mid - 1; }
-      let k = lo; const br = Math.max(t.lastIndexOf('\n', lo), t.lastIndexOf(' ', lo));
-      if (br > lo * 0.6) k = br;
-      return [t.slice(0, k), t.slice(k).replace(/^[ \n]/, '')];
-    };
-    const reflow = () => {
-      if (ta.scrollHeight <= ta.clientHeight + 1) return;
-      const caret = ta.selectionStart;
-      commit();
-      for (let i = E.cur; i < E.pages.length; i++) {
-        const [head, tail] = split(E.pages[i]);
-        if (!head && tail) break; // даже один символ не помещается
-        if (!tail) continue;
-        E.pages[i] = head;
-        if (i === E.pages.length - 1) E.pages.push('');
-        E.pages[i + 1] = tail + (E.pages[i + 1] ? (tail.endsWith('\n') ? '' : '\n') + E.pages[i + 1] : '');
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (accept(t.slice(0, mid))) lo = mid;
+        else hi = mid - 1;
       }
-      // курсор: если он уехал на следующий лист — идём за ним
-      const head = E.pages[E.cur];
-      ta.value = head;
-      let i = E.cur, c = caret;
-      while (c > E.pages[i].length && i < E.pages.length - 1) { c -= E.pages[i].length + 1; i++; }
-      show(i, Math.max(0, Math.min(E.pages[i].length, c)));
+      const boundary = Math.max(t.lastIndexOf('\n', lo - 1), t.lastIndexOf(' ', lo - 1)) + 1;
+      let cut = boundary > lo * .6 ? boundary : lo;
+      if (/[\uD800-\uDBFF]/.test(t.charAt(cut - 1)) && /[\uDC00-\uDFFF]/.test(t.charAt(cut))) cut--;
+      return cut;
+    }
+    function imageMetrics(image) {
+      const available = meter.clientHeight;
+      const lineHeight = parseFloat(getComputedStyle(meter).lineHeight);
+      const ratio = imageRatios.get(image[1]) || 2 / 3;
+      const width = meter.clientWidth * Math.max(15, Math.min(100, Number(image[2]))) / 100;
+      const naturalHeight = width * ratio;
+      const height = paged() ? Math.min(naturalHeight, Math.max(0, available - lineHeight * 2 - 20)) : naturalHeight;
+      const spacing = ruled() ? Math.ceil(height / lineHeight) * lineHeight - height : 20;
+      return { height, spacing, sideWidth: Math.max(0, meter.clientWidth - width - 12) };
+    }
+    function sidePrefix(text, height, width) {
+      const lineHeight = parseFloat(getComputedStyle(meter).lineHeight);
+      if (width < Math.max(82, options.size * 5) || height < lineHeight) return 0;
+      return fittingPrefix(text, (part) => textH(part, width) <= height + 1);
+    }
+    function pageCut(text) {
+      const entries = text.split('\n');
+      if (!entries.some((line) => PAD_IMAGE.test(line))) return fittingPrefix(text, fits);
+      const lineHeight = parseFloat(getComputedStyle(meter).lineHeight);
+      const available = meter.clientHeight;
+      let used = 0, start = 0, end = 0, wrap = null;
+      const heightOf = (part) => {
+        const start = wrap ? sidePrefix(part, wrap.height, wrap.sideWidth) : 0;
+        return Math.max(lineHeight, textH(part.slice(start)));
+      };
+      for (const entry of entries) {
+        const image = entry.match(PAD_IMAGE);
+        if (image) {
+          const before = text.slice(start, end > start ? end - 1 : end);
+          const cut = fittingPrefix(before, (part) => used + heightOf(part) <= available + 1);
+          if (cut < before.length) return start + cut;
+          used += heightOf(before);
+          wrap = imageMetrics(image);
+          if (used + wrap.height + wrap.spacing + lineHeight > available + 1 && end > 0) return end;
+          used += wrap.height + wrap.spacing;
+          start = end + entry.length + 1;
+        }
+        end += entry.length + 1;
+      }
+      return start + fittingPrefix(text.slice(start), (part) => used + heightOf(part) <= available + 1);
+    }
+    function joinContinuations(index, caret) {
+      const pages = [], position = { index, caret };
+      for (let i = 0; i < E.pages.length; i++) {
+        if (i === index) {
+          position.index = continuations[i] ? pages.length - 1 : pages.length;
+          if (continuations[i]) position.caret += pages.at(-1).length;
+        }
+        if (continuations[i]) pages[pages.length - 1] += E.pages[i];
+        else pages.push(E.pages[i]);
+      }
+      if (pages.length !== E.pages.length) {
+        E.pages = pages;
+        continuations.length = pages.length;
+        continuations.fill(false);
+      }
+      return position;
+    }
+    function paginate(index, caret, from = 0) {
+      const position = { index, caret, changed: false };
+      if (!paged() || meter.clientHeight <= 1 || !meter.clientWidth) return position;
+      const limit = Math.max(0, meter.clientHeight - parseFloat(getComputedStyle(meter).lineHeight) * 2 - 20);
+      host.style.setProperty('--pad-image-max-height', limit + 'px');
+      if (opts.fixedPages) return position;
+      for (let page = from; page < E.pages.length; page++) {
+        const text = E.pages[page];
+        const cut = pageCut(text);
+        if (cut <= 0 || cut >= text.length) continue;
+        E.pages.splice(page, 1, text.slice(0, cut), text.slice(cut));
+        continuations.splice(page + 1, 0, true);
+        if (position.index > page || (position.index === page && position.caret > cut)) {
+          if (position.index === page) position.caret -= cut;
+          position.index++;
+        }
+        position.changed = true;
+      }
+      return position;
+    }
+    function revealPaginated(index, caret, focus, regroup = false, force = true) {
+      const before = E.pages.slice();
+      const anchor = regroup ? joinContinuations(index, caret) : { index, caret };
+      const position = paginate(anchor.index, anchor.caret);
+      const changed = before.length !== E.pages.length || before.some((page, i) => page !== E.pages[i]);
+      if (!changed && !force) return;
+      const page = opts.previewIndex ? opts.previewIndex(E.pages.length) : position.index;
+      show(page, null, false);
+      if (!viewOnly) focusAt(page, position.caret, focus);
+      if (changed) saveSoon();
+    }
+    function fitCurrent() {
+      if (!paged() || host.getClientRects().length === 0) return;
+      commit();
+      const position = paginate(E.cur, cursorOffset(E.ta), E.cur);
+      if (!position.changed) { syncFolio(); return; }
+      const focused = host.contains(document.activeElement);
+      show(position.index, null, false);
+      focusAt(position.index, position.caret, focused);
+      saveSoon();
+    }
+    E.reflowAfterFont = () => {
+      if (!host.isConnected || !host.getClientRects().length) return;
+      applyAppearance();
+      const refresh = () => {
+        if (!paged()) return;
+        commit();
+        revealPaginated(E.cur, cursorOffset(E.ta), host.contains(document.activeElement), true, false);
+      };
+      refresh();
+      if (!document.fonts) return;
+      const style = getComputedStyle(meter);
+      document.fonts.load(style.fontSize + ' ' + style.fontFamily).then(() => {
+        if (host.contains(meter) && host.getClientRects().length) {
+          applyAppearance();
+          refresh();
+        }
+      }).catch(() => {});
     };
-    ta.addEventListener('input', () => { reflow(); saveSoon(); });
+    ta.addEventListener('input', (event) => {
+      syncFolio();
+      if (!event.isComposing) fitCurrent();
+      saveSoon();
+    });
+    ta.addEventListener('compositionend', fitCurrent);
     ta.addEventListener('keydown', (ev) => {
+      if (viewOnly) return;
       ev.stopPropagation();
       if (ev.key === 'Escape' || ((ev.ctrlKey || ev.metaKey) && ev.code === 'KeyN')) { ev.preventDefault(); if (opts.onEscape) opts.onEscape(); return; }
       // стрелки переходят с листа на лист, как по одной длинной странице
@@ -5308,28 +5657,72 @@
       // Backspace в начале листа — к концу предыдущего
       if (ev.key === 'Backspace' && E.cur > 0 && ta.selectionStart === 0 && ta.selectionEnd === 0) {
         ev.preventDefault();
-        if (!ta.value.trim()) { E.pages.splice(E.cur, 1); show(E.cur - 1, -1, false); saveSoon(); return; }
+        if (!ta.value.trim()) { E.pages.splice(E.cur, 1); continuations.splice(E.cur, 1); show(E.cur - 1, -1, false); saveSoon(); return; }
         show(E.cur - 1, -1); return;
       }
-      if (ev.key === 'PageDown' || (ev.ctrlKey && ev.key === 'ArrowRight' && ev.altKey)) { ev.preventDefault(); if (E.cur < E.pages.length - 1) show(E.cur + 1, 0); }
+      if (ev.key === 'PageDown' || (ev.ctrlKey && ev.key === 'ArrowRight' && ev.altKey)) { ev.preventDefault(); nextSheet(); }
       if (ev.key === 'PageUp') { ev.preventDefault(); if (E.cur > 0) show(E.cur - 1, -1); }
     });
     folio.addEventListener('click', (ev) => {
       if (ev.target.closest('.pf-prev')) show(E.cur - 1, -1);
-      else if (ev.target.closest('.pf-next')) show(E.cur + 1, 0);
+      else if (ev.target.closest('.pf-next')) nextSheet();
     });
     let wAcc = 0, wLock = 0;
-    host.onwheel = (ev) => {
+    if (!viewOnly) host.onwheel = (ev) => {
       ev.stopPropagation();
-      if (!paged() || !rich.hidden || E.pages.length < 2) return;
+      if (!paged() || E.pages.length < 2) return;
       wAcc += ev.deltaY;
       if (Date.now() < wLock || Math.abs(wAcc) < 60) return;
       const d = wAcc > 0 ? 1 : -1; wAcc = 0; wLock = Date.now() + 350;
-      if (E.cur + d >= 0 && E.cur + d < E.pages.length) show(E.cur + d, d > 0 ? 0 : -1);
+      if (E.cur + d >= 0 && E.cur + d < E.pages.length) {
+        ev.preventDefault();
+        show(E.cur + d, d > 0 ? 0 : -1);
+      }
     };
-    notebookClipboard(host, E);
-    E.applyAppearance();
-    show(Math.max(0, E.pages.length - 1));
+    if (!viewOnly) notebookClipboard(host, E);
+    applyAppearance();
+    const last = viewOnly ? 0 : E.pages.length - 1;
+    revealPaginated(last, E.pages[last].length, false);
+    if (!opts.fixedPages) E.reflowAfterFont();
+    E.showPreview = (index, pages) => {
+      if (pages) {
+        E.previewMissing = index >= pages.length;
+        E.pages = E.previewMissing ? [''] : pages;
+      }
+      paginate(index, 0);
+      show(index, null, false);
+    };
+    E.waitForPreviewImages = async () => {
+      let batch;
+      do {
+        batch = previewImages;
+        await Promise.all(batch);
+      } while (host.isConnected && batch !== previewImages);
+    };
+    E.previewAnchor = (index) => {
+      let block = index, caret = 0;
+      for (let i = 1; i <= index; i++) if (continuations[i]) block--;
+      for (let i = index; i > 0 && continuations[i]; i--) caret += E.pages[i - 1].length;
+      return { block, caret };
+    };
+    E.restorePreviewAnchor = ({ block, caret }) => {
+      let index = 0;
+      while (index < E.pages.length - 1 && block > 0) {
+        index++;
+        if (!continuations[index]) block--;
+      }
+      while (continuations[index + 1] && caret >= E.pages[index].length) {
+        caret -= E.pages[index].length;
+        index++;
+      }
+      show(index, null, false);
+      focusAt(index, caret);
+      if (!paged() && E.ta) {
+        const line = parseFloat(getComputedStyle(meter).lineHeight);
+        const y = E.ta.getBoundingClientRect().top + textH(E.ta.value.slice(0, E.ta.selectionStart), E.ta.clientWidth);
+        rich.scrollTop += y - rich.getBoundingClientRect().top - line;
+      }
+    };
     E.focusEnd = () => show(E.cur, -1);
     return E;
   }
@@ -5337,15 +5730,62 @@
   // ---- блокнот в книге ----
   let PADE = null;
   const padOpen = () => !$('pad').hidden;
-  async function openPad() {
+  const padWidthHandle = $('pad-width-handle');
+  if (Number.isFinite(S.padWidth)) reader.style.setProperty('--pad-custom-width', S.padWidth + 'px');
+  const maxPadWidth = () => Math.max(matchMedia('(max-width: 1100px)').matches ? 290 : 360, Math.min(560, innerWidth - 460));
+  function describePadWidth() {
+    if (!padOpen()) return;
+    const width = Math.round($('pad').getBoundingClientRect().width);
+    padWidthHandle.setAttribute('aria-valuemin', '236');
+    padWidthHandle.setAttribute('aria-valuemax', String(maxPadWidth()));
+    padWidthHandle.setAttribute('aria-valuenow', String(width));
+  }
+  function setPadWidth(width) {
+    const value = Math.round(Math.max(236, Math.min(maxPadWidth(), width)));
+    reader.style.setProperty('--pad-custom-width', value + 'px');
+    describePadWidth();
+    return value;
+  }
+  function savePadWidth() {
+    if (!padOpen()) return;
+    S.padWidth = Math.round($('pad').getBoundingClientRect().width);
+    saveSettings();
+    PADE?.reflowAfterFont();
+    relayout();
+  }
+  padWidthHandle.onpointerdown = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    padWidthHandle.setPointerCapture(event.pointerId);
+    const startX = event.clientX, startWidth = $('pad').getBoundingClientRect().width;
+    padWidthHandle.onpointermove = (move) => setPadWidth(startWidth + startX - move.clientX);
+    padWidthHandle.onlostpointercapture = () => {
+      padWidthHandle.onpointermove = null;
+      savePadWidth();
+    };
+  };
+  padWidthHandle.onkeydown = (event) => {
+    const width = $('pad').getBoundingClientRect().width;
+    const next = { ArrowLeft: width + 12, ArrowRight: width - 12, Home: 236, End: maxPadWidth() }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setPadWidth(next);
+    savePadWidth();
+  };
+  async function openPad(anchor = null) {
     if (!R.book || padOpen()) return;
     closePanels();
     $('pad').hidden = false; reader.classList.add('pad-on'); $('btn-pad').classList.add('active');
     PADE = padEditor($('pad-sheet'), R.id, { onEscape: () => closePad() });
+    describePadWidth();
     syncSettings();
     const editor = PADE;
     await relayout();
-    if (PADE === editor) editor.focusEnd();
+    if (PADE === editor) {
+      if (anchor) editor.restorePreviewAnchor(anchor);
+      else editor.focusEnd();
+    }
   }
   async function closePad() {
     if (!padOpen()) return;
@@ -5358,7 +5798,10 @@
   const togglePad = () => (padOpen() ? closePad() : openPad());
   window.__pad = { open: openPad, close: closePad, editor: () => PADE };
   $('btn-pad').onclick = togglePad;
-  $('set-pad-numbers').onchange = (event) => PADE?.setOption('numbers', event.target.checked);
+  $('set-pad-numbers').onchange = (event) => changePadOption('numbers', event.target.checked);
+  $('set-pad-pinned').onchange = (event) => changePadOption('pinned', event.target.checked);
+  $('set-pad-size').oninput = (event) => { $('pad-size-value').textContent = event.target.value; };
+  $('set-pad-size').onchange = (event) => changePadOption('size', event.target.valueAsNumber);
   document.addEventListener('pointerdown', (event) => {
     if (!event.target.closest('#pad-context')) $('pad-context').hidden = true;
   });
@@ -5366,25 +5809,195 @@
   stage.addEventListener('mousedown', (ev) => {
     if (!padOpen() || ev.button !== 0) return;
     const z = zoneOf(ev.clientX - stage.getBoundingClientRect().left);
-    if (!z) setTimeout(() => { if (!String(window.getSelection())) closePad(); }, 0);
+    if (!z) setTimeout(() => {
+      if (padOpen() && !padOptions(R.id).pinned && !String(window.getSelection())) closePad();
+    }, 0);
   });
 
   // ---- раздел «Блокноты» на главной ----
-  const PADV = { open: null, query: '', ed: null };
+  const PADV = { open: null, query: '', spread: null };
+  window.addEventListener('resize', debounce(() => {
+    describePadWidth();
+    PADE?.reflowAfterFont();
+    PADV.spread?.resize();
+  }, 120));
+  function closePadSpread() {
+    PADV.open = null;
+    renderPads();
+  }
+  function snapshotPadLeaf(sheet) {
+    const copy = sheet.cloneNode(true);
+    const computed = getComputedStyle(sheet);
+    Object.assign(copy.style, { width: '100%', height: '100%', animation: 'none', boxShadow: computed.boxShadow, borderRadius: computed.borderRadius });
+    for (const key of ['--pad-top', '--pad-side', '--pad-bottom']) copy.style.setProperty(key, computed.getPropertyValue(key));
+    const folio = getComputedStyle(sheet.querySelector('.pad-folio'));
+    Object.assign(copy.querySelector('.pad-folio').style, { left: folio.left, right: folio.right });
+    copy.querySelectorAll('textarea').forEach((field, i) => { field.value = sheet.querySelectorAll('textarea')[i].value; });
+    // Снимок сохраняет уже декодированные картинки, даже если их blob-адрес был освобождён.
+    const images = sheet.querySelectorAll('img');
+    copy.querySelectorAll('img').forEach((target, i) => {
+      const image = images[i];
+      if (!image.naturalWidth || !image.offsetWidth || !image.offsetHeight) return;
+      const canvas = document.createElement('canvas'), scale = Math.min(2, devicePixelRatio || 1);
+      canvas.width = Math.ceil(image.offsetWidth * scale);
+      canvas.height = Math.ceil(image.offsetHeight * scale);
+      const ctx = canvas.getContext('2d');
+      const fit = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+      const width = image.naturalWidth * fit, height = image.naturalHeight * fit;
+      ctx.drawImage(image, 0, (canvas.height - height) / 2, width, height);
+      Object.assign(canvas.style, { display: 'block', width: image.offsetWidth + 'px', height: image.offsetHeight + 'px', borderRadius: getComputedStyle(image).borderRadius });
+      target.replaceWith(canvas);
+    });
+    return copy;
+  }
+  function makePadTurnSlot(sheet, overlay, rect) {
+    const slot = makeSlot(overlay);
+    slot.classList.add('on');
+    Object.assign(slot.style, { left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', height: rect.height + 'px' });
+    slot.firstChild.replaceChildren(snapshotPadLeaf(sheet));
+    return slot;
+  }
+  async function imprintPadCover(leaf, url, title, author) {
+    const fallback = document.createElement('div');
+    fallback.className = 'pad-cover-fallback';
+    fallback.innerHTML = (author ? '<small>' + esc(author) + '</small>' : '') + '<b>' + esc(title) + '</b>';
+    leaf.append(fallback);
+    if (!url) return;
+    try {
+      const bookCover = new Image();
+      bookCover.src = url;
+      await bookCover.decode();
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, 400 / Math.max(bookCover.naturalWidth, bookCover.naturalHeight));
+      const w = canvas.width = Math.max(1, Math.round(bookCover.naturalWidth * scale));
+      const h = canvas.height = Math.max(1, Math.round(bookCover.naturalHeight * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bookCover, 0, 0, w, h);
+      const image = ctx.getImageData(0, 0, w, h);
+      const { data } = image;
+      const source = new Uint8ClampedArray(data);
+      const luminance = (i) => .299 * source[i] + .587 * source[i + 1] + .114 * source[i + 2];
+      const feather = Math.max(1, Math.min(w, h) * .045);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          const sample = (Math.min(y + 2, h - 1) * w + Math.min(x + 2, w - 1)) * 4;
+          const shade = luminance(i);
+          const edge = luminance(sample) - shade;
+          const depth = edge < -5 ? -edge * 1.41 : Math.max(0, 169 - shade) * .79 + Math.max(0, edge) * 1.6;
+          const fade = Math.min(1, x / feather, y / feather, (w - x - 1) / feather, (h - y - 1) / feather);
+          const tone = edge < -5 ? [248, 223, 190] : [84, 54, 33];
+          data.set(tone, i);
+          data[i + 3] = Math.min(121, depth) * fade * source[i + 3] / 255;
+        }
+      }
+      ctx.putImageData(image, 0, 0);
+      const imprint = new Image();
+      imprint.alt = 'Обложка книги «' + title + '»';
+      imprint.src = canvas.toDataURL();
+      await imprint.decode();
+      leaf.replaceChildren(imprint);
+    } catch (error) { console.warn('Не удалось подготовить оттиск обложки', error); }
+  }
+  function openPadSpread(box, id, bookTitle, bookAuthor, available) {
+    box.innerHTML = '<div class="pads-open"><div class="pad-spread-actions"><button class="po-back" data-pad-back>← Все блокноты</button>' +
+      (available ? '<button data-pad-book="' + esc(id) + '">Открыть книгу →</button>' : '<span class="po-miss">Книги сейчас нет в папке</span>') +
+      '</div><header class="pad-spread-heading"><div class="po-k">Блокнот к книге</div><h2 class="po-t">' + esc(bookTitle) + '</h2>' +
+      (bookAuthor ? '<div class="po-a">' + esc(bookAuthor) + '</div>' : '') + '</header>' +
+      '<div class="pad-spread" tabindex="-1" aria-label="Разворот блокнота"><section class="pad-sheet spread-leaf" aria-label="Левый лист"></section><section class="pad-sheet spread-leaf" aria-label="Правый лист"></section>' +
+      '<div class="pad-spread-binding" aria-hidden="true">' + '<i></i>'.repeat(19) + '</div></div>' +
+      '<div class="pad-spread-nav"><button data-pad-turn="-2" aria-label="Предыдущий разворот">‹</button><button data-pad-turn="2" aria-label="Следующий разворот">›</button></div></div>';
+    const [leftSheet, rightSheet] = box.querySelectorAll('.pad-spread .pad-sheet');
+    const spread = leftSheet.parentElement;
+    spread.style.setProperty('--pad-spread-kraft', 'url("' + notebookCoverSrc + '")');
+    const binding = box.querySelector('.pad-spread-binding');
+    const [prev, next] = box.querySelectorAll('[data-pad-turn]');
+    const imageRatios = new Map();
+    let left, right, first = 0;
+    const coverLeaf = document.createElement('div');
+    coverLeaf.className = 'pad-cover-leaf';
+    const previewIndex = (length) => {
+      const lastSpread = length <= 1 ? 0 : Math.floor((length - 2) / 2) * 2 + 1;
+      first = Math.min(first, lastSpread);
+      return first;
+    };
+    const update = (editor) => {
+      if (!right) return;
+      coverLeaf.hidden = first !== 0;
+      right.showPreview(first === 0 ? 0 : first + 1, editor.pages);
+      prev.disabled = first === 0;
+      next.disabled = (first === 0 ? 1 : first + 2) >= editor.pages.length;
+      prev.parentElement.hidden = editor.pages.length <= 1;
+    };
+    const refresh = () => left?.reflowAfterFont();
+    right = padEditor(rightSheet, id, { viewOnly: true, fixedPages: true, imageRatios, onImageRatio: refresh });
+    left = padEditor(leftSheet, id, { viewOnly: true, imageRatios, onLayout: update, previewIndex, onImageRatio: refresh });
+    leftSheet.append(coverLeaf);
+    imprintPadCover(coverLeaf, L.metas[id]?.cover, bookTitle, bookAuthor);
+    let overlay = null, animation = null;
+    const stop = () => {
+      animation?.cancel();
+      animation = null;
+      overlay?.remove();
+      overlay = null;
+    };
+    PADV.spread = {
+      anchor: () => left.previewAnchor(left.pages[first]?.trim() || !left.pages[first + 1]?.trim() ? first : first + 1),
+      move: async (delta) => {
+        if (delta < 0 && first === 0) return;
+        const index = first === 0 ? 1 : Math.max(0, first + delta);
+        if (index >= left.pages.length) return;
+        stop();
+        const dir = Math.sign(delta), moving = dir > 0 ? rightSheet : leftSheet;
+        const other = dir > 0 ? leftSheet : rightSheet;
+        const rect = moving.getBoundingClientRect();
+        if (spread.contains(document.activeElement)) spread.focus({ preventScroll: true });
+        first = index;
+        if (!rect.width || !rect.height || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          left.showPreview(index);
+          return;
+        }
+        overlay = document.createElement('div');
+        overlay.className = 'pad-turn-overlay';
+        overlay.inert = true;
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.dataset.turning = dir > 0 ? 'right' : 'left';
+        const bind = dir > 0 ? rect.left : rect.right;
+        overlay.style.perspectiveOrigin = bind + 'px ' + (rect.top + rect.height / 2) + 'px';
+        document.body.append(overlay);
+        const current = overlay;
+        const stat = makePadTurnSlot(other, current, other.getBoundingClientRect());
+        const leaf = makePadTurnSlot(moving, current, rect);
+        leaf.style.transformOrigin = (dir > 0 ? 'left' : 'right') + ' center';
+        const bindingRect = binding.getBoundingClientRect();
+        const bindingCopy = binding.cloneNode(true);
+        Object.assign(bindingCopy.style, { left: bindingRect.left + bindingRect.width / 2 + 'px', top: bindingRect.top + 'px', bottom: 'auto', height: bindingRect.height + 'px' });
+        current.append(bindingCopy);
+        left.showPreview(index);
+        await Promise.all([left.waitForPreviewImages(), right.waitForPreviewImages()]);
+        if (overlay !== current) return;
+        leaf.lastChild.replaceChildren(snapshotPadLeaf(other));
+        const duration = 600;
+        stat.animate([{ opacity: 1, offset: 0 }, { opacity: 1, offset: .38 }, { opacity: 0, offset: .62 }, { opacity: 0, offset: 1 }], { duration, fill: 'both' });
+        animation = leaf.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(' + (-dir * 180) + 'deg)' }],
+          { duration, easing: 'cubic-bezier(.32, .08, .48, 1)', fill: 'both' });
+        animation.onfinish = () => { if (overlay === current) stop(); };
+      },
+      resize: () => { stop(); left.reflowAfterFont(); right.reflowAfterFont(); },
+      stop,
+    };
+  }
   function renderPads() {
     const box = $('pads');
-    if (PADV.ed) { PADV.ed.save(); PADV.ed = null; }
+    PADV.spread?.stop();
+    PADV.spread = null;
     const all = pads(), q = PADV.query.trim().toLowerCase().replace(/ё/g, 'е');
     const ids = Object.keys(all).filter((id) => !padEmpty(all[id])).sort((a, b) => (all[b].t || 0) - (all[a].t || 0));
     const title = (id) => (L.metas[id] && L.metas[id].title) || all[id].title || 'Без названия';
     const author = (id) => ((L.metas[id] && L.metas[id].authors) || [])[0] || all[id].author || '';
     if (PADV.open && all[PADV.open]) {
       const id = PADV.open, inLib = L.entries.some((e) => e.id === id);
-      box.innerHTML = '<div class="pads-open"><div class="pad-sheet big" id="pad-big"></div><div class="po-side">' +
-        '<div class="po-k">Блокнот к книге</div><div class="po-t">' + esc(title(id)) + '</div><div class="po-a">' + esc(author(id)) + (author(id) ? ' · ' : '') + 'изменён ' + ago(all[id].t) + '</div>' +
-        '<div class="po-act">' + (inLib ? '<button data-pad-book="' + esc(id) + '">Открыть книгу →</button>' : '<span class="po-miss">Книги сейчас нет в папке</span>') +
-        '<button class="po-back" data-pad-back="1">← Все блокноты</button></div></div></div>';
-      PADV.ed = padEditor($('pad-big'), id, { onEscape: () => { PADV.open = null; renderPads(); } });
+      openPadSpread(box, id, title(id), author(id), inLib);
       return;
     }
     PADV.open = null;
@@ -5394,21 +6007,34 @@
       return;
     }
     box.innerHTML = '<div class="pads-head"><h2>Блокноты<span>' + list.length + '</span></h2></div>' +
-      (list.length ? '<div class="pads-grid">' + list.map((id, i) => {
-        const x = all[id], first = x.pages.find((pg) => pg.trim()) || '';
-        const lines = first.split('\n').slice(0, 9).map((l) => '<span>' + (esc(l) || '&nbsp;') + '</span>').join('');
-        return '<button class="padc" data-pad="' + esc(id) + '" style="--r:' + ([-.6, .5, -.3, .7, -.5][i % 5]) + 'deg">' + (x.pages.length > 1 ? '<span class="padc-under"></span>' : '') +
-          '<span class="padc-paper"><span class="padc-lines">' + lines + '</span></span>' +
-          '<span class="padc-t">' + esc(title(id)) + '</span><span class="padc-a">' + esc(author(id)) + (author(id) ? ' · ' : '') + ago(x.t) + (x.pages.length > 1 ? ' · ' + x.pages.length + ' ' + plural(x.pages.length, 'лист', 'листа', 'листов') : '') + '</span></button>';
+      (list.length ? '<div class="pads-grid">' + list.map((id) => {
+        const name = title(id), who = author(id), meta = L.metas[id];
+        const [tone, shade] = PALETTE[hash(name) % PALETTE.length];
+        const book = meta?.cover
+          ? '<img class="padc-book" src="' + esc(meta.cover) + '" alt="" loading="lazy" draggable="false">'
+          : '<span class="padc-book" style="background:linear-gradient(155deg,' + tone + ',' + shade + ')"></span>';
+        const label = esc(who ? name + ' — ' + who : name);
+        const caption = '<span class="padc-imprint"><span class="padc-t">' + esc(name) + '</span>' +
+          (who ? '<span class="padc-a">' + esc(who) + '</span>' : '') + '</span>';
+        return '<button class="padc" data-pad="' + esc(id) + '" aria-label="' + label + '" title="' + label + '">' +
+          '<span class="padc-art" aria-hidden="true">' + book + notebookCover(false, caption) + '</span></button>';
       }).join('') + '</div>' : '<p class="nothing">Ничего не найдено</p>');
   }
   $('pads').addEventListener('click', (ev) => {
     const c = ev.target.closest('[data-pad]');
     if (c) { PADV.open = c.dataset.pad; renderPads(); $('lib-main').scrollTop = 0; return; }
-    if (ev.target.closest('[data-pad-back]')) { PADV.open = null; renderPads(); return; }
+    if (ev.target.closest('[data-pad-back]')) { closePadSpread(); return; }
+    const turn = ev.target.closest('[data-pad-turn]');
+    if (turn) { PADV.spread?.move(Number(turn.dataset.padTurn)); return; }
     const b = ev.target.closest('[data-pad-book]');
-    if (b) { if (PADV.ed) PADV.ed.save(); const e = L.entries.find((x) => x.id === b.dataset.padBook); if (e) openEntry(e); }
+    if (b) {
+      const padAnchor = PADV.spread?.anchor();
+      PADV.spread?.stop();
+      const e = L.entries.find((x) => x.id === b.dataset.padBook);
+      if (e) openEntry(e, null, { withPad: true, padAnchor });
+    }
   });
+  $('lib-main').addEventListener('scroll', () => PADV.spread?.stop(), { passive: true });
 
   // запуск
   buildSettings();

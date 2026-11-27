@@ -275,6 +275,12 @@
     }
     const ann = kid(ti, 'annotation');
     if (ann) meta.annotation = fb2Inner(ann, { images: {}, depth: 0 });
+    const edition = kid(desc, 'publish-info');
+    meta.publication = {
+      publisher: clean(kid(edition, 'publisher')?.textContent),
+      year: clean(kid(edition, 'year')?.textContent),
+      isbn: clean(kid(edition, 'isbn')?.textContent),
+    };
     const cp = kid(ti, 'coverpage');
     const img = cp && kid(cp, 'image');
     if (img) meta.coverId = getHref(img).replace(/^#/, '');
@@ -387,7 +393,7 @@
 
     const meta = {};
     fillFb2Meta(root, meta);
-    Object.assign(book, { title: meta.title || '', authors: meta.authors || [], series: meta.series || '', annotation: meta.annotation || '' });
+    Object.assign(book, { title: meta.title || '', authors: meta.authors || [], series: meta.series || '', annotation: meta.annotation || '', publication: meta.publication });
     if (meta.lang) book.lang = meta.lang;
     if (meta.coverId && images[meta.coverId]) book.cover = images[meta.coverId];
 
@@ -551,6 +557,19 @@
       const raw = d.textContent.trim();
       meta.annotation = /<\w/.test(raw) ? sanitizeSimple(raw) : raw.split(/\n+/).map((p) => '<p>' + esc(p) + '</p>').join('');
     }
+    const isbn = q('identifier').map((node) => {
+      const value = clean(node.textContent);
+      const scheme = Array.from(node.attributes).find((attribute) => attribute.localName === 'scheme')?.value;
+      if (/^(?:urn:)?isbn\s*:/i.test(value) || /^isbn$/i.test(scheme || '')) {
+        return value.replace(/^(?:urn:)?isbn\s*:\s*/i, '');
+      }
+      return '';
+    }).find(Boolean);
+    meta.publication = {
+      publisher: clean(q('publisher')[0]?.textContent),
+      year: clean(q('date')[0]?.textContent).match(/^\d{4}(?=-|$)/)?.[0],
+      isbn,
+    };
     const metas = q('meta');
     const sName = metas.find((m) => m.getAttribute('name') === 'calibre:series');
     const sIdx = metas.find((m) => m.getAttribute('name') === 'calibre:series_index');
@@ -662,7 +681,7 @@
     const meta = epubMetaFrom(opf, opfPath);
     const urls = [];
     const book = { format: 'epub', title: meta.title, authors: meta.authors, series: meta.series, lang: meta.lang || 'ru',
-      annotation: meta.annotation, cover: null, chapters: [], toc: [], notes: {}, idMap: {}, urls };
+      annotation: meta.annotation, publication: meta.publication, cover: null, chapters: [], toc: [], notes: {}, idMap: {}, urls };
 
     const imgCache = {};
     const imgUrl = (path) => {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, screen, powerSaveBlocker, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net, screen, powerSaveBlocker, clipboard, ClipboardItem, nativeImage } = require('electron');
 
 // без стандартного меню Electron: его горячие клавиши (Ctrl+R, Ctrl+=, F11…) перехватывали наши
 Menu.setApplicationMenu(null);
@@ -225,21 +225,6 @@ handle('pick-file', async () => {
   allowFile(r.filePaths[0]);
   return r.filePaths[0];
 });
-handle('save-quote-png', async (e, { name, bytes } = {}) => {
-  if (!(bytes instanceof Uint8Array) || bytes.length < 33 || bytes.length > 8 * 1024 * 1024) throw new Error('Некорректное изображение');
-  const png = Buffer.from(bytes);
-  if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.toString('ascii', 12, 16) !== 'IHDR' ||
-      png.readUInt32BE(16) !== 1080 || png.readUInt32BE(20) !== 1350) throw new Error('Некорректное изображение');
-  const filename = typeof name === 'string' ? name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').slice(0, 120).trim() : '';
-  const result = await dialog.showSaveDialog(win, {
-    title: 'Сохранить цитату как PNG',
-    defaultPath: path.join(app.getPath('pictures'), filename || 'Цитата.png'),
-    filters: [{ name: 'PNG', extensions: ['png'] }],
-  });
-  if (result.canceled || !result.filePath) return false;
-  await fs.promises.writeFile(result.filePath, png);
-  return true;
-});
 handle('allow-dropped', (e, p) => { if (p && BOOK_RE.test(p)) allowFile(p); });
 handle('scan', (e, dir) => (inRoots(dir) ? scanDir(dir) : { missing: !fs.existsSync(String(dir || '')), files: [], denied: true }));
 handle('read', (e, p) => { if (!canRead(p)) throw new Error('нет доступа к файлу'); return fs.promises.readFile(p); });
@@ -255,19 +240,42 @@ handle('stat', async (e, p) => {
 });
 handle('initial-file', () => { const f = pendingFile; pendingFile = null; if (f) allowFile(f); return f; });
 handle('version', () => app.getVersion());
-handle('pad-clipboard-read', () => {
-  const image = clipboard.readImage();
-  if (image.isEmpty()) return { text: clipboard.readText() };
-  const { width, height } = image.getSize();
-  const longest = Math.max(width, height);
-  const scaled = longest > 1600 ? image.resize(width >= height ? { width: 1600 } : { height: 1600 }) : image;
-  return { image: scaled.toPNG() };
+handle('pad-clipboard-read', async () => {
+  for (const item of await clipboard.read()) {
+    const type = item.types.find((type) => type.startsWith('image/'));
+    if (!type) continue;
+    const data = await item.getType(type);
+    const image = nativeImage.createFromBuffer(Buffer.from(await data.arrayBuffer()));
+    if (image.isEmpty()) continue;
+    const { width, height } = image.getSize();
+    const longest = Math.max(width, height);
+    const scaled = longest > 1600 ? image.resize(width >= height ? { width: 1600 } : { height: 1600 }) : image;
+    return { image: new Uint8Array(scaled.toPNG()) };
+  }
+  return { text: await clipboard.readText() };
 });
-handle('pad-clipboard-write', (e, { text, image } = {}) => {
-  if (typeof text === 'string') { clipboard.writeText(text); return; }
-  if (!(image instanceof Uint8Array) || image.length > 12 * 1024 * 1024) return;
+handle('pad-clipboard-write', async (e, { text, image } = {}) => {
+  if (typeof text === 'string') { await clipboard.writeText(text); return true; }
+  if (!(image instanceof Uint8Array) || image.length > 12 * 1024 * 1024) return false;
   const data = nativeImage.createFromBuffer(Buffer.from(image));
-  if (!data.isEmpty()) clipboard.writeImage(data);
+  if (data.isEmpty()) return false;
+  await clipboard.write([new ClipboardItem({ 'image/png': new Blob([data.toPNG()], { type: 'image/png' }) })]);
+  return true;
+});
+handle('save-quote-png', async (e, { name, bytes } = {}) => {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 33 || bytes.length > 8 * 1024 * 1024) throw new Error('Некорректное изображение');
+  const png = Buffer.from(bytes);
+  if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.toString('ascii', 12, 16) !== 'IHDR' ||
+      png.readUInt32BE(16) !== 1080 || png.readUInt32BE(20) !== 1350) throw new Error('Некорректное изображение');
+  const filename = typeof name === 'string' ? name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').slice(0, 120).trim() : '';
+  const result = await dialog.showSaveDialog(win, {
+    title: 'Сохранить цитату как PNG',
+    defaultPath: path.join(app.getPath('pictures'), filename || 'Цитата.png'),
+    filters: [{ name: 'PNG', extensions: ['png'] }],
+  });
+  if (result.canceled || !result.filePath) return false;
+  await fs.promises.writeFile(result.filePath, png);
+  return true;
 });
 // встроенная книга-путеводитель (лежит рядом с программой)
 const guideFile = () => path.join(__dirname, 'guide.fb2');
